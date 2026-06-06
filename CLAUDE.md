@@ -18,7 +18,6 @@ npm run dev                  # Vite dev server (service worker disabled — see 
 npm run build                # tsc -b project references, then vite build -> dist/
 npm run preview              # serve the production build locally
 npm run typecheck            # type-check without emitting
-npm run generate-pwa-assets  # regenerate icon PNGs from public/logo.svg
 ```
 
 There is no test runner or linter configured yet. Type-checking via `tsc`
@@ -81,5 +80,7 @@ optimistic local mutation of the React arrays; go through the store.
   `byKind` map in `selectors.ts`, the forms, and bump the backup `version` if the
   shape changes.
 - IDs are `crypto.randomUUID()` via `newId()` in `store.tsx`.
-- PWA icons derive from `public/logo.svg`; rerun `generate-pwa-assets` after
-  changing it (output PNGs are committed).
+- The app icon is a single file, `public/app-icon.png`, used as-is (manifest
+  declares it `purpose: 'any'` only — deliberately no maskable variant, so the
+  OS doesn't crop/pad it). To change the icon, replace that one PNG (square,
+  ideally 512×512+). `public/favicon.svg` is the browser-tab icon.

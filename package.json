@@ -7,8 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit",
-    "generate-pwa-assets": "pwa-assets-generator"
+    "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
     "idb": "^8.0.3",
@@ -18,7 +17,6 @@
   "devDependencies": {
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
-    "@vite-pwa/assets-generator": "^1.0.0",
     "@vitejs/plugin-react": "^4.5.2",
     "typescript": "^5.8.3",
     "vite": "^7.0.0",

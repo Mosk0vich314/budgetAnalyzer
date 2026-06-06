@@ -15,7 +15,7 @@ export default defineConfig({
       // every asset and swaps the service worker on each deploy, so the old
       // cached scripts can never shadow a new release.
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'apple-touch-icon-180x180.png'],
+      includeAssets: ['favicon.svg', 'app-icon.png'],
       manifest: {
         name: 'Budget Analyzer',
         short_name: 'Budget',
@@ -26,16 +26,13 @@ export default defineConfig({
         // Scope/start_url must include the base path on a project Pages site.
         scope: base,
         start_url: base,
+        // Single custom icon, used exactly as provided. purpose 'any' only —
+        // NO 'maskable' entry, so the OS does not crop it to a circle/squircle
+        // or require safe-zone padding. The image in public/app-icon.png is
+        // treated as the finished icon. Replace that file to change the icon.
         icons: [
-          { src: 'pwa-64x64.png', sizes: '64x64', type: 'image/png' },
-          { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
-          {
-            src: 'maskable-icon-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable',
-          },
+          { src: 'app-icon.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'app-icon.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
         ],
       },
       workbox: {
