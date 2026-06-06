@@ -21,6 +21,13 @@ if not defined DIRTY (
   exit /b 0
 )
 
+REM Build first so a broken build is caught HERE instead of failing on GitHub
+echo Building and checking the app compiles (this can take a moment)...
+call npm run build
+if errorlevel 1 goto :buildfail
+echo Build OK.
+echo.
+
 REM Ask for a commit message; press Enter to use a timestamp
 set "MSG="
 set /p "MSG=Commit message (Enter for timestamp): "
@@ -49,6 +56,14 @@ echo ============================================
 echo.
 pause
 exit /b 0
+
+:buildfail
+echo.
+echo *** Build FAILED - see the error above. Nothing was committed or pushed. ***
+echo *** Fix the problem, then run deploy.bat again. ***
+echo.
+pause
+exit /b 1
 
 :error
 echo.
