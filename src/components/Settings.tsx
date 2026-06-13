@@ -27,14 +27,14 @@ export function Settings() {
 
   return (
     <section>
-      <header className="page-head">
+      <header className="section-head" style={{ marginTop: 4 }}>
         <h1>Backup</h1>
       </header>
 
-      <p className="muted">
+      <div className="info-card">
         Your data lives only on this device. Export regularly and keep the file
         somewhere safe — it is the only copy.
-      </p>
+      </div>
 
       <div className="stat-line">
         {accounts.length} accounts · {transactions.length} transactions

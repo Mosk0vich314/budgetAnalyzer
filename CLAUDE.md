@@ -82,5 +82,9 @@ optimistic local mutation of the React arrays; go through the store.
 - IDs are `crypto.randomUUID()` via `newId()` in `store.tsx`.
 - The app icon is a single file, `public/app-icon.png`, used as-is (manifest
   declares it `purpose: 'any'` only — deliberately no maskable variant, so the
-  OS doesn't crop/pad it). To change the icon, replace that one PNG (square,
-  ideally 512×512+). `public/favicon.svg` is the browser-tab icon.
+  OS doesn't crop/pad it). To change the icon, replace that one PNG: **square,
+  512×512, and well under 2 MB**. vite-plugin-pwa fails the build if any
+  precached asset exceeds 2 MiB (`workbox.maximumFileSizeToCacheInBytes`), so an
+  oversized icon breaks the deploy. `public/favicon.svg` is the browser-tab icon.
+- Changing the icon does NOT refresh it on an already-installed phone PWA — the
+  home-screen icon is cached; the user must remove and re-add the app.

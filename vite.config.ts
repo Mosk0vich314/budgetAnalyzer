@@ -20,8 +20,8 @@ export default defineConfig({
         name: 'Budget Analyzer',
         short_name: 'Budget',
         description: 'Personal finance tracker — accounts, investments, cash flow.',
-        theme_color: '#0f172a',
-        background_color: '#0f172a',
+        theme_color: '#fbf0df',
+        background_color: '#fbf0df',
         display: 'standalone',
         // Scope/start_url must include the base path on a project Pages site.
         scope: base,

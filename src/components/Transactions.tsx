@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { newId, useStore } from '../store'
 import { formatCents, parseAmountToCents, centsToInput } from '../money'
+import { ArrowUpIcon, ArrowDownIcon, PlusIcon, TrashIcon } from './icons'
 import type { Transaction, TxDirection } from '../types'
 
 function todayISO(): string {
@@ -30,31 +31,42 @@ export function Transactions() {
 
   return (
     <section>
-      <header className="page-head">
+      <header className="section-head" style={{ marginTop: 4 }}>
         <h1>Activity</h1>
-        <button className="primary" disabled={accounts.length === 0} onClick={startNew}>
-          + Add
+        <button className="add-btn" disabled={accounts.length === 0} onClick={startNew}>
+          <PlusIcon size={18} /> Add
         </button>
       </header>
 
       {accounts.length === 0 && (
-        <p className="muted">Create an account first, then log transactions here.</p>
+        <div className="empty">Create an account first, then log transactions here.</div>
       )}
 
-      <ul className="list">
-        {transactions.map((t) => (
-          <li key={t.id} className="list-row" onClick={() => setEditing(t)}>
-            <div>
-              <span className="list-title">{t.category || '(uncategorized)'}</span>
-              <span className="badge">{accountName(t.accountId)}</span>
-              <span className="muted small">{t.date}</span>
-            </div>
-            <span className={t.direction === 'in' ? 'amount-in' : 'amount-out'}>
-              {t.direction === 'in' ? '+' : '−'}
-              {formatCents(t.amount)}
-            </span>
-          </li>
-        ))}
+      {accounts.length > 0 && transactions.length === 0 && (
+        <div className="empty">No transactions yet. Tap “Add” to log one.</div>
+      )}
+
+      <ul className="row-list">
+        {transactions.map((t) => {
+          const isIn = t.direction === 'in'
+          return (
+            <li key={t.id} className="row" onClick={() => setEditing(t)}>
+              <span className={isIn ? 'tile in' : 'tile out'}>
+                {isIn ? <ArrowUpIcon size={20} /> : <ArrowDownIcon size={20} />}
+              </span>
+              <div className="row-body">
+                <span className="row-title">{t.category || 'Uncategorized'}</span>
+                <span className="row-meta">
+                  {accountName(t.accountId)} · {t.date}
+                </span>
+              </div>
+              <span className={isIn ? 'row-value amount-in' : 'row-value amount-out'}>
+                {isIn ? '+' : '−'}
+                {formatCents(t.amount)}
+              </span>
+            </li>
+          )
+        })}
       </ul>
 
       {editing && (
@@ -121,13 +133,13 @@ function TransactionForm({
 
         <div className="segmented">
           <button
-            className={direction === 'out' ? 'seg active' : 'seg'}
+            className={direction === 'out' ? 'seg active seg-out' : 'seg'}
             onClick={() => setDirection('out')}
           >
             Money out
           </button>
           <button
-            className={direction === 'in' ? 'seg active' : 'seg'}
+            className={direction === 'in' ? 'seg active seg-in' : 'seg'}
             onClick={() => setDirection('in')}
           >
             Money in
@@ -171,7 +183,7 @@ function TransactionForm({
         <div className="sheet-actions">
           {!isNew && (
             <button className="danger" onClick={() => onDelete(tx.id)}>
-              Delete
+              <TrashIcon size={16} /> Delete
             </button>
           )}
           <button onClick={onClose}>Cancel</button>

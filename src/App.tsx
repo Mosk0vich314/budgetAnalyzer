@@ -1,17 +1,19 @@
 import { useState } from 'react'
+import type { ComponentType } from 'react'
 import { Dashboard } from './components/Dashboard'
 import { Accounts } from './components/Accounts'
 import { Transactions } from './components/Transactions'
 import { Settings } from './components/Settings'
+import { HomeIcon, WalletIcon, ActivityIcon, BackupIcon } from './components/icons'
 import { useStore } from './store'
 
 type Tab = 'dashboard' | 'accounts' | 'transactions' | 'settings'
 
-const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: 'dashboard', label: 'Overview', icon: '◎' },
-  { id: 'accounts', label: 'Accounts', icon: '▤' },
-  { id: 'transactions', label: 'Activity', icon: '⇅' },
-  { id: 'settings', label: 'Backup', icon: '⤓' },
+const TABS: { id: Tab; label: string; Icon: ComponentType<{ size?: number }> }[] = [
+  { id: 'dashboard', label: 'Overview', Icon: HomeIcon },
+  { id: 'accounts', label: 'Accounts', Icon: WalletIcon },
+  { id: 'transactions', label: 'Activity', Icon: ActivityIcon },
+  { id: 'settings', label: 'Backup', Icon: BackupIcon },
 ]
 
 export function App() {
@@ -34,14 +36,14 @@ export function App() {
       </main>
 
       <nav className="tabbar">
-        {TABS.map((t) => (
+        {TABS.map(({ id, label, Icon }) => (
           <button
-            key={t.id}
-            className={t.id === tab ? 'tab active' : 'tab'}
-            onClick={() => setTab(t.id)}
+            key={id}
+            className={id === tab ? 'tab active' : 'tab'}
+            onClick={() => setTab(id)}
           >
-            <span className="tab-icon">{t.icon}</span>
-            <span className="tab-label">{t.label}</span>
+            <Icon size={21} />
+            <span className="tab-label">{label}</span>
           </button>
         ))}
       </nav>

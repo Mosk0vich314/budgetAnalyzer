@@ -1,45 +1,140 @@
 import { useStore } from '../store'
-import { computeTotals, monthlyFlow } from '../selectors'
+import { accountBalance, computeTotals, monthlyFlow } from '../selectors'
 import { formatCents } from '../money'
+import {
+  ArrowUpIcon,
+  ArrowDownIcon,
+  BankIcon,
+  CashIcon,
+  ChartIcon,
+} from './icons'
+import type { AccountKind } from '../types'
 
-const KIND_LABELS: Record<string, string> = {
+const KIND_ICON = {
+  bank: BankIcon,
+  cash: CashIcon,
+  investment: ChartIcon,
+} satisfies Record<AccountKind, typeof BankIcon>
+
+const KIND_TILE: Record<AccountKind, string> = {
+  bank: 'tile',
+  cash: 'tile turq',
+  investment: 'tile grey',
+}
+
+const KIND_LABELS: Record<AccountKind, string> = {
   bank: 'Bank',
   cash: 'Cash',
-  investment: 'Invested',
+  investment: 'Investment',
+}
+
+/** Pretty month label, e.g. "2024-03" -> "March 2024". */
+function monthLabel(ym: string): string {
+  const [y, m] = ym.split('-').map(Number)
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, {
+    month: 'long',
+    year: 'numeric',
+  })
 }
 
 export function Dashboard() {
   const { accounts, transactions } = useStore()
   const totals = computeTotals(accounts, transactions)
-  const flow = monthlyFlow(transactions).slice(0, 6)
+  const flow = monthlyFlow(transactions)
+
+  const thisMonth = new Date().toISOString().slice(0, 7)
+  const current = flow.find((m) => m.month === thisMonth) ?? {
+    month: thisMonth,
+    in: 0,
+    out: 0,
+  }
+
+  const active = accounts.filter((a) => !a.archived)
 
   return (
     <section>
-      <header className="page-head">
-        <h1>Net worth</h1>
-        <p className="net-worth">{formatCents(totals.netWorth)}</p>
+      <header className="topbar">
+        <div className="avatar">€</div>
+        <div className="topbar-text">
+          <span className="topbar-greeting">Welcome back</span>
+          <span className="topbar-name">Overview</span>
+        </div>
       </header>
 
-      <div className="cards">
-        {(['bank', 'investment', 'cash'] as const).map((kind) => (
-          <div className="card" key={kind}>
-            <span className="card-label">{KIND_LABELS[kind]}</span>
-            <span className="card-value">{formatCents(totals.byKind[kind])}</span>
-          </div>
-        ))}
+      <div className="hero">
+        <span className="hero-label">
+          <span className="hero-dot" />
+          Total balance
+        </span>
+        <p className="hero-balance">{formatCents(totals.netWorth)}</p>
+        <span className="hero-sub">
+          Across {active.length} {active.length === 1 ? 'account' : 'accounts'}
+        </span>
       </div>
 
-      <h2>Recent months</h2>
+      <div className="stat-grid">
+        <div className="stat-card dark">
+          <div className="stat-top">
+            <span className="stat-label">In this month</span>
+            <span className="stat-badge">
+              <ArrowUpIcon size={20} />
+            </span>
+          </div>
+          <span className="stat-value">{formatCents(current.in)}</span>
+        </div>
+        <div className="stat-card">
+          <div className="stat-top">
+            <span className="stat-label">Out this month</span>
+            <span className="stat-badge out">
+              <ArrowDownIcon size={20} />
+            </span>
+          </div>
+          <span className="stat-value">{formatCents(current.out)}</span>
+        </div>
+      </div>
+
+      <div className="section-head">
+        <h2>Accounts</h2>
+      </div>
+      {active.length === 0 ? (
+        <div className="empty">No accounts yet. Add your first one under Accounts.</div>
+      ) : (
+        <ul className="row-list">
+          {active.map((a) => {
+            const Icon = KIND_ICON[a.kind]
+            return (
+              <li key={a.id} className="row">
+                <span className={KIND_TILE[a.kind]}>
+                  <Icon size={22} />
+                </span>
+                <div className="row-body">
+                  <span className="row-title">{a.name}</span>
+                  <span className="row-meta">{KIND_LABELS[a.kind]}</span>
+                </div>
+                <span className="row-value">
+                  {formatCents(accountBalance(a, transactions), a.currency)}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      <div className="section-head">
+        <h2>Recent months</h2>
+      </div>
       {flow.length === 0 ? (
-        <p className="muted">No transactions yet. Add some under Activity.</p>
+        <div className="empty">No transactions yet. Add some under Activity.</div>
       ) : (
         <ul className="flow-list">
-          {flow.map((m) => (
+          {flow.slice(0, 6).map((m) => (
             <li key={m.month} className="flow-row">
-              <span className="flow-month">{m.month}</span>
-              <span className="amount-in">+{formatCents(m.in)}</span>
-              <span className="amount-out">−{formatCents(m.out)}</span>
+              <span className="flow-month">{monthLabel(m.month)}</span>
               <span className="flow-net">{formatCents(m.in - m.out)}</span>
+              <span className="flow-detail">
+                <span className="amount-in">+{formatCents(m.in)}</span>
+                <span className="amount-out">−{formatCents(m.out)}</span>
+              </span>
             </li>
           ))}
         </ul>
