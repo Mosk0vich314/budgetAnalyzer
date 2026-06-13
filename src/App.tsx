@@ -3,16 +3,24 @@ import type { ComponentType } from 'react'
 import { Dashboard } from './components/Dashboard'
 import { Accounts } from './components/Accounts'
 import { Transactions } from './components/Transactions'
+import { Budgets } from './components/Budgets'
 import { Settings } from './components/Settings'
-import { HomeIcon, WalletIcon, ActivityIcon, BackupIcon } from './components/icons'
+import {
+  HomeIcon,
+  WalletIcon,
+  ActivityIcon,
+  TargetIcon,
+  BackupIcon,
+} from './components/icons'
 import { useStore } from './store'
 
-type Tab = 'dashboard' | 'accounts' | 'transactions' | 'settings'
+type Tab = 'dashboard' | 'accounts' | 'transactions' | 'budgets' | 'settings'
 
 const TABS: { id: Tab; label: string; Icon: ComponentType<{ size?: number }> }[] = [
   { id: 'dashboard', label: 'Overview', Icon: HomeIcon },
   { id: 'accounts', label: 'Accounts', Icon: WalletIcon },
   { id: 'transactions', label: 'Activity', Icon: ActivityIcon },
+  { id: 'budgets', label: 'Budgets', Icon: TargetIcon },
   { id: 'settings', label: 'Backup', Icon: BackupIcon },
 ]
 
@@ -30,6 +38,7 @@ export function App() {
             {tab === 'dashboard' && <Dashboard />}
             {tab === 'accounts' && <Accounts />}
             {tab === 'transactions' && <Transactions />}
+            {tab === 'budgets' && <Budgets />}
             {tab === 'settings' && <Settings />}
           </>
         )}

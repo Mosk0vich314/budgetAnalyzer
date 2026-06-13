@@ -93,6 +93,14 @@ export const ChartIcon = (p: IconProps) => (
   </svg>
 )
 
+export const TargetIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="8.5" />
+    <circle cx="12" cy="12" r="4.5" />
+    <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+  </svg>
+)
+
 export const TagIcon = (p: IconProps) => (
   <svg {...base(p)}>
     <path d="M3 12V5a2 2 0 0 1 2-2h7l9 9-9 9z" />

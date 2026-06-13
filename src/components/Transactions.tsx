@@ -2,18 +2,28 @@ import { useState } from 'react'
 import { newId, useStore } from '../store'
 import { formatCents, parseAmountToCents, centsToInput } from '../money'
 import { ArrowUpIcon, ArrowDownIcon, PlusIcon, TrashIcon } from './icons'
-import type { Transaction, TxDirection } from '../types'
+import { tileClass } from './ui'
+import type { Category, Transaction, TxDirection } from '../types'
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
 export function Transactions() {
-  const { accounts, transactions, saveTransaction, removeTransaction } = useStore()
+  const {
+    accounts,
+    transactions,
+    categories,
+    saveTransaction,
+    removeTransaction,
+    saveCategory,
+  } = useStore()
   const [editing, setEditing] = useState<Transaction | null>(null)
 
   const accountName = (id: string) =>
     accounts.find((a) => a.id === id)?.name ?? '(deleted)'
+  const categoryById = (id?: string) =>
+    id ? categories.find((c) => c.id === id) : undefined
 
   function startNew() {
     if (accounts.length === 0) return
@@ -22,7 +32,7 @@ export function Transactions() {
       accountId: accounts[0].id,
       amount: 0,
       direction: 'out',
-      category: '',
+      categoryId: undefined,
       note: '',
       date: todayISO(),
       createdAt: new Date().toISOString(),
@@ -49,13 +59,21 @@ export function Transactions() {
       <ul className="row-list">
         {transactions.map((t) => {
           const isIn = t.direction === 'in'
+          const cat = categoryById(t.categoryId)
+          const title = cat?.name ?? (isIn ? 'Income' : 'Uncategorized')
           return (
             <li key={t.id} className="row" onClick={() => setEditing(t)}>
-              <span className={isIn ? 'tile in' : 'tile out'}>
-                {isIn ? <ArrowUpIcon size={20} /> : <ArrowDownIcon size={20} />}
+              <span className={cat ? tileClass(cat.color) : isIn ? 'tile in' : 'tile out'}>
+                {cat ? (
+                  <span className="emoji">{cat.emoji}</span>
+                ) : isIn ? (
+                  <ArrowUpIcon size={20} />
+                ) : (
+                  <ArrowDownIcon size={20} />
+                )}
               </span>
               <div className="row-body">
-                <span className="row-title">{t.category || 'Uncategorized'}</span>
+                <span className="row-title">{title}</span>
                 <span className="row-meta">
                   {accountName(t.accountId)} · {t.date}
                 </span>
@@ -73,6 +91,8 @@ export function Transactions() {
         <TransactionForm
           tx={editing}
           accounts={accounts}
+          categories={categories}
+          onCreateCategory={saveCategory}
           onClose={() => setEditing(null)}
           onSave={async (t) => {
             await saveTransaction(t)
@@ -88,15 +108,21 @@ export function Transactions() {
   )
 }
 
+const NEW_CATEGORY = '__new__'
+
 function TransactionForm({
   tx,
   accounts,
+  categories,
+  onCreateCategory,
   onClose,
   onSave,
   onDelete,
 }: {
   tx: Transaction
   accounts: { id: string; name: string }[]
+  categories: Category[]
+  onCreateCategory: (c: Category) => Promise<void>
   onClose: () => void
   onSave: (t: Transaction) => void
   onDelete: (id: string) => void
@@ -104,12 +130,42 @@ function TransactionForm({
   const [direction, setDirection] = useState<TxDirection>(tx.direction)
   const [amount, setAmount] = useState(tx.amount ? centsToInput(tx.amount) : '')
   const [accountId, setAccountId] = useState(tx.accountId)
-  const [category, setCategory] = useState(tx.category)
+  const [categoryId, setCategoryId] = useState<string | undefined>(tx.categoryId)
+  const [creating, setCreating] = useState(false)
+  const [newName, setNewName] = useState('')
   const [note, setNote] = useState(tx.note)
   const [date, setDate] = useState(tx.date)
 
   const cents = parseAmountToCents(amount)
   const valid = cents !== null && cents > 0
+
+  function onPickCategory(value: string) {
+    if (value === NEW_CATEGORY) {
+      setCreating(true)
+      setCategoryId(undefined)
+    } else {
+      setCreating(false)
+      setCategoryId(value || undefined)
+    }
+  }
+
+  async function addCategory() {
+    const name = newName.trim()
+    if (!name) return
+    const id = newId()
+    await onCreateCategory({
+      id,
+      name,
+      emoji: '🏷️',
+      color: 'denim',
+      monthlyBudget: 0,
+      archived: false,
+      createdAt: new Date().toISOString(),
+    })
+    setCategoryId(id)
+    setCreating(false)
+    setNewName('')
+  }
 
   function submit() {
     if (!valid) return
@@ -118,13 +174,13 @@ function TransactionForm({
       direction,
       amount: Math.abs(cents),
       accountId,
-      category: category.trim(),
+      categoryId,
       note: note.trim(),
       date,
     })
   }
 
-  const isNew = tx.amount === 0 && !tx.category
+  const isNew = tx.amount === 0 && !tx.categoryId
 
   return (
     <div className="sheet-backdrop" onClick={onClose}>
@@ -165,16 +221,46 @@ function TransactionForm({
             ))}
           </select>
         </label>
-        <div className="field-row">
-          <label>
-            Category
-            <input value={category} onChange={(e) => setCategory(e.target.value)} />
-          </label>
-          <label>
-            Date
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          </label>
-        </div>
+        <label>
+          Category
+          <select
+            value={creating ? NEW_CATEGORY : (categoryId ?? '')}
+            onChange={(e) => onPickCategory(e.target.value)}
+          >
+            <option value="">Uncategorized</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.emoji} {c.name}
+              </option>
+            ))}
+            <option value={NEW_CATEGORY}>＋ New category…</option>
+          </select>
+        </label>
+        {creating && (
+          <div className="field-row">
+            <label>
+              New category name
+              <input
+                value={newName}
+                autoFocus
+                placeholder="e.g. Groceries"
+                onChange={(e) => setNewName(e.target.value)}
+              />
+            </label>
+            <button
+              className="primary"
+              style={{ alignSelf: 'flex-end' }}
+              disabled={!newName.trim()}
+              onClick={() => void addCategory()}
+            >
+              Add
+            </button>
+          </div>
+        )}
+        <label>
+          Date
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </label>
         <label>
           Note
           <input value={note} onChange={(e) => setNote(e.target.value)} />

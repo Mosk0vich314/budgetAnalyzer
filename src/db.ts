@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
-import type { Account, BackupFile, Transaction } from './types'
+import type { Account, BackupFile, Category, Transaction } from './types'
+import { deriveCategories } from './migrate'
 
 // IndexedDB is the single source of truth: all data lives on-device, no
 // network. Backups happen via explicit JSON export/import (see backup.ts).
@@ -12,23 +13,42 @@ interface BudgetDB extends DBSchema {
   transactions: {
     key: string
     value: Transaction
-    indexes: { 'by-account': string; 'by-date': string }
+    indexes: { 'by-account': string; 'by-date': string; 'by-category': string }
+  }
+  categories: {
+    key: string
+    value: Category
   }
 }
 
 const DB_NAME = 'budget-analyzer'
-const DB_VERSION = 1
+// v2: add `categories` store + Transaction.categoryId; migrate legacy
+// free-text categories into Category records.
+const DB_VERSION = 2
 
 let dbPromise: Promise<IDBPDatabase<BudgetDB>> | null = null
 
 function getDB(): Promise<IDBPDatabase<BudgetDB>> {
   if (!dbPromise) {
     dbPromise = openDB<BudgetDB>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        db.createObjectStore('accounts', { keyPath: 'id' })
-        const tx = db.createObjectStore('transactions', { keyPath: 'id' })
-        tx.createIndex('by-account', 'accountId')
-        tx.createIndex('by-date', 'date')
+      async upgrade(db, oldVersion, _newVersion, tx) {
+        if (oldVersion < 1) {
+          db.createObjectStore('accounts', { keyPath: 'id' })
+          const txns = db.createObjectStore('transactions', { keyPath: 'id' })
+          txns.createIndex('by-account', 'accountId')
+          txns.createIndex('by-date', 'date')
+        }
+        if (oldVersion < 2) {
+          db.createObjectStore('categories', { keyPath: 'id' })
+          const txStore = tx.objectStore('transactions')
+          txStore.createIndex('by-category', 'categoryId')
+          // Backfill: turn distinct free-text categories into Category records
+          // and stamp each transaction with its categoryId.
+          const existing = await txStore.getAll()
+          const { categories, transactions } = deriveCategories(existing)
+          for (const c of categories) await tx.objectStore('categories').put(c)
+          for (const t of transactions) await txStore.put(t)
+        }
       },
     })
   }
@@ -55,6 +75,32 @@ export async function deleteAccount(id: string): Promise<void> {
   await tx.done
 }
 
+export async function getCategories(): Promise<Category[]> {
+  return (await getDB()).getAll('categories')
+}
+
+export async function putCategory(category: Category): Promise<void> {
+  await (await getDB()).put('categories', category)
+}
+
+/**
+ * Delete a category and orphan its transactions to "uncategorized" (clear
+ * their categoryId). Unlike deleteAccount, this never deletes transactions —
+ * removing a budget category must not erase spending history.
+ */
+export async function deleteCategory(id: string): Promise<void> {
+  const db = await getDB()
+  const tx = db.transaction(['categories', 'transactions'], 'readwrite')
+  await tx.objectStore('categories').delete(id)
+  const index = tx.objectStore('transactions').index('by-category')
+  for await (const cursor of index.iterate(id)) {
+    const next = { ...cursor.value }
+    delete next.categoryId
+    await cursor.update(next)
+  }
+  await tx.done
+}
+
 export async function getTransactions(): Promise<Transaction[]> {
   return (await getDB()).getAllFromIndex('transactions', 'by-date')
 }
@@ -70,10 +116,15 @@ export async function deleteTransaction(id: string): Promise<void> {
 /** Replace the entire database contents (used by import / restore). */
 export async function replaceAll(data: BackupFile): Promise<void> {
   const db = await getDB()
-  const tx = db.transaction(['accounts', 'transactions'], 'readwrite')
+  const tx = db.transaction(
+    ['accounts', 'transactions', 'categories'],
+    'readwrite',
+  )
   await tx.objectStore('accounts').clear()
   await tx.objectStore('transactions').clear()
+  await tx.objectStore('categories').clear()
   for (const a of data.accounts) await tx.objectStore('accounts').put(a)
   for (const t of data.transactions) await tx.objectStore('transactions').put(t)
+  for (const c of data.categories) await tx.objectStore('categories').put(c)
   await tx.done
 }

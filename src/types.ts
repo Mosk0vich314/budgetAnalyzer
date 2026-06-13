@@ -15,6 +15,23 @@ export interface Account {
   createdAt: string
 }
 
+/**
+ * A spending category with an optional monthly budget. Budgets apply to
+ * outflows only; `monthlyBudget` of 0 means "tracked, but no limit set".
+ */
+export interface Category {
+  id: string
+  name: string
+  /** Single emoji used as the category's tile glyph. */
+  emoji: string
+  /** Tile color key — see TILE_COLORS in components. */
+  color: string
+  /** Monthly spending limit in cents. 0 = no limit. */
+  monthlyBudget: number
+  archived: boolean
+  createdAt: string
+}
+
 export type TxDirection = 'in' | 'out'
 
 export interface Transaction {
@@ -23,7 +40,13 @@ export interface Transaction {
   /** Always a positive amount in cents; `direction` gives the sign. */
   amount: number
   direction: TxDirection
-  category: string
+  /** References a Category id; undefined = uncategorized. */
+  categoryId?: string
+  /**
+   * Legacy free-text category, kept only so pre-v2 backups import cleanly.
+   * New code reads `categoryId`; this is migrated into a Category on upgrade.
+   */
+  category?: string
   note: string
   /** ISO date (YYYY-MM-DD). */
   date: string
@@ -37,4 +60,5 @@ export interface BackupFile {
   exportedAt: string
   accounts: Account[]
   transactions: Transaction[]
+  categories: Category[]
 }

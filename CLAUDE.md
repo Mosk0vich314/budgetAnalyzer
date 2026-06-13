@@ -5,7 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 Budget Analyzer is a **local-first personal finance PWA**: bank/cash/investment
-accounts, money-in/out transactions, net worth and monthly cash-flow overview.
+accounts, money-in/out transactions, categories with monthly per-category
+budgets, net worth and monthly cash-flow overview.
 It is a static single-page app deployed to GitHub Pages and installed on a phone
 as a PWA. There is **no backend** — all data lives in the browser's IndexedDB on
 the device, and the only persistence/portability mechanism is JSON
@@ -54,31 +55,47 @@ write. The dataset is small (one person's finances), so this "reload everything"
 approach is deliberate — it keeps state trivially consistent. Don't introduce
 optimistic local mutation of the React arrays; go through the store.
 
-- `src/types.ts` — domain model (`Account`, `Transaction`, `BackupFile`).
-  **All money is stored as integer cents**, never floats.
+- `src/types.ts` — domain model (`Account`, `Transaction`, `Category`,
+  `BackupFile`). **All money is stored as integer cents**, never floats.
+  Transactions reference a category via `categoryId` (`category` is a legacy
+  free-text field kept only for importing pre-v2 backups).
 - `src/money.ts` — the *only* boundary between cents and human strings.
   `parseAmountToCents` (tolerant of `.`/`,` decimal styles) and `formatCents`
   (Intl currency). Any new amount input/display must go through these.
 - `src/db.ts` — IndexedDB access via `idb`. Single source of truth. Note
-  `deleteAccount` cascades to its transactions; `replaceAll` backs import.
-  Bumping the schema requires raising `DB_VERSION` and handling `upgrade`.
+  `deleteAccount` **cascades** to its transactions, but `deleteCategory`
+  **orphans** them (clears `categoryId`) — removing a budget must never delete
+  spending history. `replaceAll` backs import. Bumping the schema requires
+  raising `DB_VERSION` and handling `upgrade` (currently at v2; the v1→v2
+  upgrade adds the `categories` store and runs `deriveCategories`).
+- `src/migrate.ts` — `deriveCategories`: turns legacy free-text
+  `transaction.category` strings into `Category` records and backfills
+  `categoryId`. Shared by the DB upgrade and old-backup import so neither path
+  loses categories.
 - `src/selectors.ts` — pure derived calculations (account balance = opening
-  balance + signed transactions; net worth; per-month flow). Keep computation
-  here, not in components.
-- `src/store.tsx` — `StoreProvider` / `useStore`: holds accounts + transactions
-  in React state, exposes async mutations that write then `reload()`.
+  balance + signed transactions; net worth; per-month flow; `categorySpend` /
+  `budgetSummary` for monthly per-category budgets). Keep computation here, not
+  in components. Budgets track **outflows only**; categories with
+  `monthlyBudget === 0` are tracked but uncapped.
+- `src/store.tsx` — `StoreProvider` / `useStore`: holds accounts, transactions,
+  and categories in React state, exposes async mutations that write then
+  `reload()`.
 - `src/backup.ts` — JSON export (download) and import (validates the
   `app: 'budget-analyzer'` marker, then `replaceAll`). This is the user's only
-  backup; treat the file format as a stable contract and version it.
-- `src/App.tsx` + `src/components/*` — bottom-tab UI (Overview / Accounts /
-  Activity / Backup). Edit forms are bottom sheets. Mobile-first; CSS uses
-  `env(safe-area-inset-*)` for installed-PWA display.
+  backup; treat the file format as a stable contract and version it
+  (`BACKUP_VERSION`, currently 2 — includes `categories`).
+- `src/App.tsx` + `src/components/*` — floating-pill bottom-tab UI (Overview /
+  Accounts / Activity / Budgets / Backup). Edit forms are bottom sheets.
+  Mobile-first; CSS uses `env(safe-area-inset-*)` for installed-PWA display.
+  Shared category presentation (tile colors, emoji choices) lives in
+  `src/components/ui.ts`; SVG icons in `src/components/icons.tsx`.
 
 ### Conventions
 
-- New account `kind` or transaction fields: update `types.ts`, then the
-  `byKind` map in `selectors.ts`, the forms, and bump the backup `version` if the
-  shape changes.
+- New account `kind`, category, or transaction fields: update `types.ts`, then
+  the `byKind` map in `selectors.ts`, the relevant forms, and bump the backup
+  `version` **and** `DB_VERSION` (with an `upgrade` branch) if the stored shape
+  changes.
 - IDs are `crypto.randomUUID()` via `newId()` in `store.tsx`.
 - The app icon is a single file, `public/app-icon.png`, used as-is (manifest
   declares it `purpose: 'any'` only — deliberately no maskable variant, so the

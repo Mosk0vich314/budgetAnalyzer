@@ -1,13 +1,17 @@
-import { getAccounts, getTransactions, replaceAll } from './db'
-import type { Account, BackupFile, Transaction } from './types'
+import { getAccounts, getCategories, getTransactions, replaceAll } from './db'
+import { deriveCategories } from './migrate'
+import type { Account, BackupFile, Category, Transaction } from './types'
 
-const BACKUP_VERSION = 1
+// v2: backups now include `categories`. v1 files (no categories) still import:
+// we derive categories from each transaction's legacy `category` string.
+const BACKUP_VERSION = 2
 
 /** Build the backup object from current DB contents and trigger a download. */
 export async function exportBackup(): Promise<void> {
-  const [accounts, transactions] = await Promise.all([
+  const [accounts, transactions, categories] = await Promise.all([
     getAccounts(),
     getTransactions(),
+    getCategories(),
   ])
   const data: BackupFile = {
     app: 'budget-analyzer',
@@ -15,6 +19,7 @@ export async function exportBackup(): Promise<void> {
     exportedAt: new Date().toISOString(),
     accounts,
     transactions,
+    categories,
   }
   const blob = new Blob([JSON.stringify(data, null, 2)], {
     type: 'application/json',
@@ -37,11 +42,24 @@ export async function importBackup(file: File): Promise<void> {
   if (!Array.isArray(parsed.accounts) || !Array.isArray(parsed.transactions)) {
     throw new Error('Backup file is missing accounts or transactions.')
   }
+
+  const accounts = parsed.accounts as Account[]
+  let transactions = parsed.transactions as Transaction[]
+  let categories = (parsed.categories as Category[] | undefined) ?? []
+
+  // Pre-v2 backups have no categories — derive them from legacy strings.
+  if (categories.length === 0 && transactions.some((t) => !t.categoryId)) {
+    const derived = deriveCategories(transactions)
+    categories = derived.categories
+    transactions = derived.transactions
+  }
+
   await replaceAll({
     app: 'budget-analyzer',
     version: parsed.version ?? BACKUP_VERSION,
     exportedAt: parsed.exportedAt ?? new Date().toISOString(),
-    accounts: parsed.accounts as Account[],
-    transactions: parsed.transactions as Transaction[],
+    accounts,
+    transactions,
+    categories,
   })
 }

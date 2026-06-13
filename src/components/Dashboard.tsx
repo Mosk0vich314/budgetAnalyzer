@@ -1,5 +1,11 @@
 import { useStore } from '../store'
-import { accountBalance, computeTotals, monthlyFlow } from '../selectors'
+import {
+  accountBalance,
+  budgetSummary,
+  computeTotals,
+  currentMonth,
+  monthlyFlow,
+} from '../selectors'
 import { formatCents } from '../money'
 import {
   ArrowUpIcon,
@@ -38,16 +44,22 @@ function monthLabel(ym: string): string {
 }
 
 export function Dashboard() {
-  const { accounts, transactions } = useStore()
+  const { accounts, transactions, categories } = useStore()
   const totals = computeTotals(accounts, transactions)
   const flow = monthlyFlow(transactions)
 
-  const thisMonth = new Date().toISOString().slice(0, 7)
+  const thisMonth = currentMonth()
   const current = flow.find((m) => m.month === thisMonth) ?? {
     month: thisMonth,
     in: 0,
     out: 0,
   }
+
+  const budget = budgetSummary(categories, transactions, thisMonth)
+  const budgetPct =
+    budget.totalBudget > 0
+      ? Math.min(100, Math.round((budget.totalSpent / budget.totalBudget) * 100))
+      : 0
 
   const active = accounts.filter((a) => !a.archived)
 
@@ -92,6 +104,30 @@ export function Dashboard() {
           <span className="stat-value">{formatCents(current.out)}</span>
         </div>
       </div>
+
+      {budget.totalBudget > 0 && (
+        <div className="budget-mini">
+          <div className="budget-mini-head">
+            <span className="hero-label">
+              <span className="hero-dot" />
+              Left this month
+            </span>
+            <span className="budget-mini-amount">
+              {formatCents(Math.max(0, budget.remaining))}
+            </span>
+          </div>
+          <div className="bar">
+            <span
+              className={budget.remaining < 0 ? 'bar-fill over' : 'bar-fill'}
+              style={{ width: `${budgetPct}%` }}
+            />
+          </div>
+          <div className="budget-mini-foot">
+            <span>{formatCents(budget.totalSpent)} spent</span>
+            <span>of {formatCents(budget.totalBudget)}</span>
+          </div>
+        </div>
+      )}
 
       <div className="section-head">
         <h2>Accounts</h2>

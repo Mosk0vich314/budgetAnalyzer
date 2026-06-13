@@ -274,9 +274,17 @@ h2 {
 .tile.grey {
   background: var(--greyblue);
 }
+.tile.orange {
+  background: var(--orange);
+  color: #2a1400;
+}
 .tile.cream {
   background: var(--cream);
   color: var(--denim);
+}
+.tile .emoji {
+  font-size: 1.3rem;
+  line-height: 1;
 }
 .tile.in {
   background: #e3f0f0;
@@ -541,18 +549,155 @@ select:focus {
   color: var(--out);
 }
 
+/* Progress bars ------------------------------------------------------------*/
+.bar {
+  height: 9px;
+  border-radius: 999px;
+  background: #f0e6d4;
+  overflow: hidden;
+}
+.bar-light {
+  background: rgba(255, 235, 208, 0.22);
+}
+.bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--turq);
+  transition: width 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.bar-light .bar-fill {
+  background: var(--orange);
+}
+.bar-fill.over {
+  background: var(--out);
+}
+
+/* Budgets: hero + mini + rows ---------------------------------------------*/
+.budget-hero {
+  background: linear-gradient(155deg, #1d4a78 0%, var(--denim) 75%);
+  color: var(--cream);
+  border-radius: 28px;
+  padding: 20px 22px 22px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.budget-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.budget-chip {
+  background: rgba(255, 235, 208, 0.16);
+  color: var(--cream);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 999px;
+}
+.budget-hero-amount {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 2.5rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin: 0;
+}
+.budget-hero-foot {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  color: rgba(255, 235, 208, 0.7);
+}
+
+.budget-mini {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin-top: 12px;
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.budget-mini-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.budget-mini-amount {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 800;
+  font-size: 1.3rem;
+  letter-spacing: -0.02em;
+}
+.budget-mini-foot {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.budget-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+.budget-row-head {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+/* Emoji + color pickers (category form) -----------------------------------*/
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 6px;
+}
+.emoji-pick {
+  background: #fbf3e7;
+  border: 1.5px solid var(--hairline);
+  border-radius: 10px;
+  padding: 7px 0;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.emoji-pick.active {
+  border-color: var(--orange);
+  background: #fff3e2;
+}
+.color-row {
+  display: flex;
+  gap: 10px;
+}
+.swatch {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.swatch.active {
+  opacity: 1;
+  transform: scale(1.08);
+  box-shadow: 0 0 0 2.5px var(--surface), 0 0 0 4.5px var(--orange);
+}
+
 /* Floating pill tab bar ----------------------------------------------------*/
 .tabbar {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
   bottom: calc(16px + env(safe-area-inset-bottom));
-  width: min(90%, 420px);
+  width: min(94%, 460px);
   display: flex;
   justify-content: space-around;
   background: var(--denim);
   border-radius: 999px;
-  padding: 8px;
+  padding: 7px;
   z-index: 15;
   box-shadow: 0 18px 40px -14px rgba(23, 59, 97, 0.7);
 }
@@ -564,7 +709,7 @@ select:focus {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  padding: 9px 0;
+  padding: 8px 0;
   color: rgba(255, 235, 208, 0.55);
   transition: color 0.15s ease;
 }
