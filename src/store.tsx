@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 import * as db from './db'
-import type { Account, Category, Transaction } from './types'
+import type { Account, AppSettings, Category, Transaction } from './types'
 
 // A tiny app-wide store: it mirrors the IndexedDB contents in React state and
 // re-reads after every mutation. The data set for a personal finance app is
@@ -17,6 +17,7 @@ interface Store {
   accounts: Account[]
   transactions: Transaction[]
   categories: Category[]
+  settings: AppSettings
   loading: boolean
   reload: () => Promise<void>
   saveAccount: (account: Account) => Promise<void>
@@ -25,6 +26,7 @@ interface Store {
   removeTransaction: (id: string) => Promise<void>
   saveCategory: (c: Category) => Promise<void>
   removeCategory: (id: string) => Promise<void>
+  saveSettings: (s: AppSettings) => Promise<void>
 }
 
 const StoreContext = createContext<Store | null>(null)
@@ -33,17 +35,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [settings, setSettings] = useState<AppSettings>({ monthStartDay: 1 })
   const [loading, setLoading] = useState(true)
 
   const reload = useCallback(async () => {
-    const [a, t, c] = await Promise.all([
+    const [a, t, c, s] = await Promise.all([
       db.getAccounts(),
       db.getTransactions(),
       db.getCategories(),
+      db.getSettings(),
     ])
     setAccounts(a.sort((x, y) => x.name.localeCompare(y.name)))
     setTransactions(t.sort((x, y) => y.date.localeCompare(x.date)))
     setCategories(c.sort((x, y) => x.name.localeCompare(y.name)))
+    setSettings(s)
     setLoading(false)
   }, [])
 
@@ -99,10 +104,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [reload],
   )
 
+  const saveSettings = useCallback(
+    async (s: AppSettings) => {
+      await db.putSettings(s)
+      await reload()
+    },
+    [reload],
+  )
+
   const value: Store = {
     accounts,
     transactions,
     categories,
+    settings,
     loading,
     reload,
     saveAccount,
@@ -111,6 +125,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     removeTransaction,
     saveCategory,
     removeCategory,
+    saveSettings,
   }
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>

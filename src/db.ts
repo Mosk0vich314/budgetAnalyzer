@@ -1,5 +1,11 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
-import type { Account, BackupFile, Category, Transaction } from './types'
+import type {
+  Account,
+  AppSettings,
+  BackupFile,
+  Category,
+  Transaction,
+} from './types'
 import { deriveCategories } from './migrate'
 
 // IndexedDB is the single source of truth: all data lives on-device, no
@@ -19,12 +25,18 @@ interface BudgetDB extends DBSchema {
     key: string
     value: Category
   }
+  settings: {
+    key: string
+    value: AppSettings & { id: string }
+  }
 }
 
 const DB_NAME = 'budget-analyzer'
-// v2: add `categories` store + Transaction.categoryId; migrate legacy
-// free-text categories into Category records.
-const DB_VERSION = 2
+// v2: categories store + Transaction.categoryId. v3: settings store.
+const DB_VERSION = 3
+
+const SETTINGS_KEY = 'app'
+const DEFAULT_SETTINGS: AppSettings = { monthStartDay: 1 }
 
 let dbPromise: Promise<IDBPDatabase<BudgetDB>> | null = null
 
@@ -49,10 +61,25 @@ function getDB(): Promise<IDBPDatabase<BudgetDB>> {
           for (const c of categories) await tx.objectStore('categories').put(c)
           for (const t of transactions) await txStore.put(t)
         }
+        if (oldVersion < 3) {
+          db.createObjectStore('settings', { keyPath: 'id' })
+          await tx
+            .objectStore('settings')
+            .put({ id: SETTINGS_KEY, ...DEFAULT_SETTINGS })
+        }
       },
     })
   }
   return dbPromise
+}
+
+export async function getSettings(): Promise<AppSettings> {
+  const rec = await (await getDB()).get('settings', SETTINGS_KEY)
+  return { ...DEFAULT_SETTINGS, ...(rec ? { monthStartDay: rec.monthStartDay } : {}) }
+}
+
+export async function putSettings(s: AppSettings): Promise<void> {
+  await (await getDB()).put('settings', { id: SETTINGS_KEY, ...s })
 }
 
 export async function getAccounts(): Promise<Account[]> {
@@ -117,7 +144,7 @@ export async function deleteTransaction(id: string): Promise<void> {
 export async function replaceAll(data: BackupFile): Promise<void> {
   const db = await getDB()
   const tx = db.transaction(
-    ['accounts', 'transactions', 'categories'],
+    ['accounts', 'transactions', 'categories', 'settings'],
     'readwrite',
   )
   await tx.objectStore('accounts').clear()
@@ -126,5 +153,6 @@ export async function replaceAll(data: BackupFile): Promise<void> {
   for (const a of data.accounts) await tx.objectStore('accounts').put(a)
   for (const t of data.transactions) await tx.objectStore('transactions').put(t)
   for (const c of data.categories) await tx.objectStore('categories').put(c)
+  await tx.objectStore('settings').put({ id: SETTINGS_KEY, ...data.settings })
   await tx.done
 }

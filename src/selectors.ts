@@ -55,39 +55,75 @@ export function monthlyFlow(transactions: Transaction[]): MonthlyFlow[] {
   return [...map.values()].sort((a, b) => b.month.localeCompare(a.month))
 }
 
-/** Current month as YYYY-MM. */
+/** Current month as YYYY-MM (used by the calendar-based cash-flow views). */
 export function currentMonth(now = new Date()): string {
   return now.toISOString().slice(0, 7)
 }
 
-/** Whole days remaining in the calendar month of `now`, including today. */
-export function daysLeftInMonth(now = new Date()): number {
-  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
-  return last - now.getDate() + 1
+function ymd(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+export interface Period {
+  /** Inclusive start, YYYY-MM-DD. */
+  start: string
+  /** Exclusive end (next cycle's start), YYYY-MM-DD. */
+  end: string
+  /** Whole days remaining in the cycle, including today. */
+  daysLeft: number
+  /** Human label, e.g. "1 Jun – 30 Jun". */
+  label: string
+}
+
+/**
+ * The budget cycle containing `now`, starting on day `monthStartDay` (1–28).
+ * With day 1 this is just the calendar month.
+ */
+export function currentPeriod(monthStartDay = 1, now = new Date()): Period {
+  const day = Math.min(28, Math.max(1, Math.floor(monthStartDay)))
+  const start = new Date(now.getFullYear(), now.getMonth(), day)
+  if (now.getDate() < day) start.setMonth(start.getMonth() - 1)
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, day)
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const daysLeft = Math.round(
+    (end.getTime() - startOfToday.getTime()) / 86_400_000,
+  )
+  const lastDay = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1)
+  const fmt = (d: Date) =>
+    d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+  return {
+    start: ymd(start),
+    end: ymd(end),
+    daysLeft,
+    label: `${fmt(start)} – ${fmt(lastDay)}`,
+  }
 }
 
 export interface CategorySpend {
   category: Category
   budget: number // monthly limit in cents (0 = no limit)
-  spent: number // outflow this month in cents
+  spent: number // outflow this period in cents
   remaining: number // budget - spent (can be negative)
   over: boolean
 }
 
 /**
- * Spend per category for a given month (outflows only). Categories with a
- * budget come first (and over-budget ones float to the top), then uncapped
+ * Spend per category for a given budget period (outflows only). Categories with
+ * a budget come first (and over-budget ones float to the top), then uncapped
  * categories ordered by spend.
  */
 export function categorySpend(
   categories: Category[],
   transactions: Transaction[],
-  month: string,
+  period: Period,
 ): CategorySpend[] {
   const spentBy = new Map<string, number>()
   for (const t of transactions) {
     if (t.direction !== 'out' || !t.categoryId) continue
-    if (t.date.slice(0, 7) !== month) continue
+    if (t.date < period.start || t.date >= period.end) continue
     spentBy.set(t.categoryId, (spentBy.get(t.categoryId) ?? 0) + t.amount)
   }
 
@@ -119,14 +155,13 @@ export interface BudgetSummary {
   daysLeft: number
 }
 
-/** Roll-up of all budgeted categories for the month: the "left this month" card. */
+/** Roll-up of all budgeted categories for the period: the "left this month" card. */
 export function budgetSummary(
   categories: Category[],
   transactions: Transaction[],
-  month: string,
-  now = new Date(),
+  period: Period,
 ): BudgetSummary {
-  const rows = categorySpend(categories, transactions, month)
+  const rows = categorySpend(categories, transactions, period)
   let totalBudget = 0
   let totalSpent = 0
   for (const r of rows) {
@@ -138,6 +173,6 @@ export function budgetSummary(
     totalBudget,
     totalSpent,
     remaining: totalBudget - totalSpent,
-    daysLeft: daysLeftInMonth(now),
+    daysLeft: period.daysLeft,
   }
 }

@@ -650,6 +650,60 @@ select:focus {
   gap: 13px;
 }
 
+/* Budget cycle bar + day picker -------------------------------------------*/
+.cycle-bar {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: 11px 15px;
+  margin: 14px 0 2px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  box-shadow: var(--shadow-soft);
+}
+.cycle-bar > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cycle-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.cycle-range {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.cycle-edit {
+  color: var(--turq);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+.day-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.day-pick {
+  background: #fbf3e7;
+  border: 1.5px solid var(--hairline);
+  border-radius: 10px;
+  padding: 10px 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.day-pick.active {
+  background: var(--orange);
+  border-color: var(--orange);
+  color: #2a1400;
+}
+
 /* Emoji + color pickers (category form) -----------------------------------*/
 .emoji-grid {
   display: grid;

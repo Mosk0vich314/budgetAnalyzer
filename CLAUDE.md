@@ -66,24 +66,29 @@ optimistic local mutation of the React arrays; go through the store.
   `deleteAccount` **cascades** to its transactions, but `deleteCategory`
   **orphans** them (clears `categoryId`) — removing a budget must never delete
   spending history. `replaceAll` backs import. Bumping the schema requires
-  raising `DB_VERSION` and handling `upgrade` (currently at v2; the v1→v2
-  upgrade adds the `categories` store and runs `deriveCategories`).
+  raising `DB_VERSION` and handling `upgrade` (currently at v3: v1→v2 adds the
+  `categories` store and runs `deriveCategories`; v2→v3 adds a single-record
+  `settings` store seeded with `monthStartDay: 1`). App preferences go through
+  `getSettings` / `putSettings`.
 - `src/migrate.ts` — `deriveCategories`: turns legacy free-text
   `transaction.category` strings into `Category` records and backfills
   `categoryId`. Shared by the DB upgrade and old-backup import so neither path
   loses categories.
 - `src/selectors.ts` — pure derived calculations (account balance = opening
   balance + signed transactions; net worth; per-month flow; `categorySpend` /
-  `budgetSummary` for monthly per-category budgets). Keep computation here, not
-  in components. Budgets track **outflows only**; categories with
-  `monthlyBudget === 0` are tracked but uncapped.
+  `budgetSummary` for per-category budgets). Keep computation here, not in
+  components. Budgets track **outflows only**; categories with
+  `monthlyBudget === 0` are tracked but uncapped. The budget cycle is a
+  configurable window, not the calendar month: `currentPeriod(monthStartDay)`
+  returns the `{ start, end }` range, and budget spend/“left” are computed over
+  it (cash-flow views like `monthlyFlow` stay on calendar months).
 - `src/store.tsx` — `StoreProvider` / `useStore`: holds accounts, transactions,
-  and categories in React state, exposes async mutations that write then
-  `reload()`.
+  categories, and `settings` in React state, exposes async mutations that write
+  then `reload()`.
 - `src/backup.ts` — JSON export (download) and import (validates the
   `app: 'budget-analyzer'` marker, then `replaceAll`). This is the user's only
   backup; treat the file format as a stable contract and version it
-  (`BACKUP_VERSION`, currently 2 — includes `categories`).
+  (`BACKUP_VERSION`, currently 3 — includes `categories` and `settings`).
 - `src/App.tsx` + `src/components/*` — floating-pill bottom-tab UI (Overview /
   Accounts / Activity / Budgets / Backup). Edit forms are bottom sheets.
   Mobile-first; CSS uses `env(safe-area-inset-*)` for installed-PWA display.

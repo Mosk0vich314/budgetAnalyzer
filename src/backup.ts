@@ -1,17 +1,30 @@
-import { getAccounts, getCategories, getTransactions, replaceAll } from './db'
+import {
+  getAccounts,
+  getCategories,
+  getSettings,
+  getTransactions,
+  replaceAll,
+} from './db'
 import { deriveCategories } from './migrate'
-import type { Account, BackupFile, Category, Transaction } from './types'
+import type {
+  Account,
+  AppSettings,
+  BackupFile,
+  Category,
+  Transaction,
+} from './types'
 
-// v2: backups now include `categories`. v1 files (no categories) still import:
-// we derive categories from each transaction's legacy `category` string.
-const BACKUP_VERSION = 2
+// v2: backups include `categories`. v3: backups include `settings`. Older files
+// import cleanly — missing categories are derived, missing settings default.
+const BACKUP_VERSION = 3
 
 /** Build the backup object from current DB contents and trigger a download. */
 export async function exportBackup(): Promise<void> {
-  const [accounts, transactions, categories] = await Promise.all([
+  const [accounts, transactions, categories, settings] = await Promise.all([
     getAccounts(),
     getTransactions(),
     getCategories(),
+    getSettings(),
   ])
   const data: BackupFile = {
     app: 'budget-analyzer',
@@ -20,6 +33,7 @@ export async function exportBackup(): Promise<void> {
     accounts,
     transactions,
     categories,
+    settings,
   }
   const blob = new Blob([JSON.stringify(data, null, 2)], {
     type: 'application/json',
@@ -46,6 +60,9 @@ export async function importBackup(file: File): Promise<void> {
   const accounts = parsed.accounts as Account[]
   let transactions = parsed.transactions as Transaction[]
   let categories = (parsed.categories as Category[] | undefined) ?? []
+  const settings: AppSettings = {
+    monthStartDay: parsed.settings?.monthStartDay ?? 1,
+  }
 
   // Pre-v2 backups have no categories — derive them from legacy strings.
   if (categories.length === 0 && transactions.some((t) => !t.categoryId)) {
@@ -61,5 +78,6 @@ export async function importBackup(file: File): Promise<void> {
     accounts,
     transactions,
     categories,
+    settings,
   })
 }

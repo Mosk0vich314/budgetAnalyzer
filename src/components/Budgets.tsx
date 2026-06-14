@@ -1,23 +1,31 @@
 import { useState } from 'react'
 import { newId, useStore } from '../store'
-import { budgetSummary, categorySpend, currentMonth } from '../selectors'
+import { budgetSummary, categorySpend, currentPeriod } from '../selectors'
 import { centsToInput, formatCents, parseAmountToCents } from '../money'
 import { PlusIcon, TrashIcon } from './icons'
 import { EMOJI_CHOICES, TILE_COLORS, tileClass } from './ui'
-import type { Category } from '../types'
+import type { AppSettings, Category } from '../types'
 
 function pct(spent: number, budget: number): number {
   if (budget <= 0) return 0
   return Math.min(100, Math.round((spent / budget) * 100))
 }
 
-export function Budgets() {
-  const { categories, transactions, saveCategory, removeCategory } = useStore()
-  const [editing, setEditing] = useState<Category | null>(null)
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return n + (s[(v - 20) % 10] ?? s[v] ?? s[0])
+}
 
-  const month = currentMonth()
-  const rows = categorySpend(categories, transactions, month)
-  const summary = budgetSummary(categories, transactions, month)
+export function Budgets() {
+  const { categories, transactions, settings, saveCategory, removeCategory, saveSettings } =
+    useStore()
+  const [editing, setEditing] = useState<Category | null>(null)
+  const [cycleOpen, setCycleOpen] = useState(false)
+
+  const period = currentPeriod(settings.monthStartDay)
+  const rows = categorySpend(categories, transactions, period)
+  const summary = budgetSummary(categories, transactions, period)
   const hasBudgets = summary.totalBudget > 0
 
   function startNew() {
@@ -40,6 +48,16 @@ export function Budgets() {
           <PlusIcon size={18} /> Category
         </button>
       </header>
+
+      <button className="cycle-bar" onClick={() => setCycleOpen(true)}>
+        <div>
+          <span className="cycle-label">Budget cycle</span>
+          <span className="cycle-range">{period.label}</span>
+        </div>
+        <span className="cycle-edit">
+          Starts {ordinal(settings.monthStartDay)} ›
+        </span>
+      </button>
 
       {hasBudgets && (
         <div className="budget-hero">
@@ -137,7 +155,62 @@ export function Budgets() {
           }}
         />
       )}
+
+      {cycleOpen && (
+        <CyclePicker
+          settings={settings}
+          onClose={() => setCycleOpen(false)}
+          onSave={async (s) => {
+            await saveSettings(s)
+            setCycleOpen(false)
+          }}
+        />
+      )}
     </section>
+  )
+}
+
+function CyclePicker({
+  settings,
+  onClose,
+  onSave,
+}: {
+  settings: AppSettings
+  onClose: () => void
+  onSave: (s: AppSettings) => void
+}) {
+  const [day, setDay] = useState(settings.monthStartDay)
+  const days = Array.from({ length: 28 }, (_, i) => i + 1)
+
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <h2>Budget cycle start</h2>
+        <p className="muted small" style={{ margin: 0 }}>
+          Pick the day each budget month begins — e.g. your payday. Budgets and
+          “left this month” are calculated from this day to the day before it next
+          month.
+        </p>
+        <div className="day-grid">
+          {days.map((d) => (
+            <button
+              key={d}
+              type="button"
+              className={d === day ? 'day-pick active' : 'day-pick'}
+              onClick={() => setDay(d)}
+            >
+              {d}
+            </button>
+          ))}
+        </div>
+        <div className="sheet-actions">
+          <button onClick={onClose}>Cancel</button>
+          <button className="primary" onClick={() => onSave({ ...settings, monthStartDay: day })}>
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 

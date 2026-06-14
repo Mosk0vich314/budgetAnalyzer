@@ -53,6 +53,15 @@ export interface Transaction {
   createdAt: string
 }
 
+/** App-wide preferences. */
+export interface AppSettings {
+  /**
+   * Day of the month (1–28) the budget cycle begins. 1 = calendar month.
+   * Capped at 28 so every month has the day.
+   */
+  monthStartDay: number
+}
+
 /** Shape of the JSON file produced by export / consumed by import. */
 export interface BackupFile {
   app: 'budget-analyzer'
@@ -61,4 +70,5 @@ export interface BackupFile {
   accounts: Account[]
   transactions: Transaction[]
   categories: Category[]
+  settings: AppSettings
 }

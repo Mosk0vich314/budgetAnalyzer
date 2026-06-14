@@ -4,6 +4,7 @@ import {
   budgetSummary,
   computeTotals,
   currentMonth,
+  currentPeriod,
   monthlyFlow,
 } from '../selectors'
 import { formatCents } from '../money'
@@ -44,7 +45,7 @@ function monthLabel(ym: string): string {
 }
 
 export function Dashboard() {
-  const { accounts, transactions, categories } = useStore()
+  const { accounts, transactions, categories, settings } = useStore()
   const totals = computeTotals(accounts, transactions)
   const flow = monthlyFlow(transactions)
 
@@ -55,7 +56,8 @@ export function Dashboard() {
     out: 0,
   }
 
-  const budget = budgetSummary(categories, transactions, thisMonth)
+  const period = currentPeriod(settings.monthStartDay)
+  const budget = budgetSummary(categories, transactions, period)
   const budgetPct =
     budget.totalBudget > 0
       ? Math.min(100, Math.round((budget.totalSpent / budget.totalBudget) * 100))
