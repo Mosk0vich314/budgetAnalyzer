@@ -58,18 +58,29 @@ optimistic local mutation of the React arrays; go through the store.
 - `src/types.ts` — domain model (`Account`, `Transaction`, `Category`,
   `BackupFile`). **All money is stored as integer cents**, never floats.
   Transactions reference a category via `categoryId` (`category` is a legacy
-  free-text field kept only for importing pre-v2 backups).
-- `src/money.ts` — the *only* boundary between cents and human strings.
-  `parseAmountToCents` (tolerant of `.`/`,` decimal styles) and `formatCents`
-  (Intl currency). Any new amount input/display must go through these.
+  free-text field kept only for importing pre-v2 backups). A transfer between
+  own accounts is **two linked transactions** (an 'out' and an 'in' leg)
+  sharing a `transferId`; legs are excluded from cash-flow and budget maths.
+  `AppSettings` carries `baseCurrency` + `rates` (1 unit of currency X =
+  `rates[X]` units of base).
+- `src/money.ts` — the *only* boundary between cents and human strings, and
+  between currencies. `parseAmountToCents` (tolerant of `.`/`,` decimal
+  styles), `formatCents` (Intl currency), `toBaseCents` / `convertCents` /
+  `hasRate` (conversion via `settings.rates`; a missing rate falls back to 1:1
+  and the dashboard warns). Any new amount input/display must go through these.
+- `src/rates.ts` — currency picker list, `fetchRates` (Frankfurter/ECB, free,
+  keyless, user-initiated only — the app never fetches on its own), and
+  `rebaseRates` for switching base currency without losing manual rates.
 - `src/db.ts` — IndexedDB access via `idb`. Single source of truth. Note
-  `deleteAccount` **cascades** to its transactions, but `deleteCategory`
-  **orphans** them (clears `categoryId`) — removing a budget must never delete
-  spending history. `replaceAll` backs import. Bumping the schema requires
-  raising `DB_VERSION` and handling `upgrade` (currently at v3: v1→v2 adds the
-  `categories` store and runs `deriveCategories`; v2→v3 adds a single-record
-  `settings` store seeded with `monthStartDay: 1`). App preferences go through
-  `getSettings` / `putSettings`.
+  `deleteAccount` **cascades** to its transactions *and the partner legs of
+  their transfers*, `deleteTransaction` on a transfer leg deletes both legs,
+  but `deleteCategory` **orphans** transactions (clears `categoryId`) —
+  removing a budget must never delete spending history. `replaceAll` backs
+  import. Bumping the schema requires raising `DB_VERSION` and handling
+  `upgrade` (currently at v4: v1→v2 adds the `categories` store and runs
+  `deriveCategories`; v2→v3 adds a single-record `settings` store seeded with
+  `monthStartDay: 1`; v3→v4 backfills `baseCurrency: 'EUR'` + `rates: {}`).
+  App preferences go through `getSettings` / `putSettings`.
 - `src/migrate.ts` — `deriveCategories`: turns legacy free-text
   `transaction.category` strings into `Category` records and backfills
   `categoryId`. Shared by the DB upgrade and old-backup import so neither path
@@ -77,20 +88,26 @@ optimistic local mutation of the React arrays; go through the store.
 - `src/selectors.ts` — pure derived calculations (account balance = opening
   balance + signed transactions; net worth; per-month flow; `categorySpend` /
   `budgetSummary` for per-category budgets). Keep computation here, not in
-  components. Budgets track **outflows only**; categories with
-  `monthlyBudget === 0` are tracked but uncapped. The budget cycle is a
-  configurable window, not the calendar month: `currentPeriod(monthStartDay)`
-  returns the `{ start, end }` range, and budget spend/“left” are computed over
-  it (cash-flow views like `monthlyFlow` stay on calendar months).
+  components. Aggregates are expressed in the **base currency** (each account
+  balance/transaction converted via `settings.rates`; `computeTotals` reports
+  `missingRates` for the dashboard warning). Budgets track **net outflows**:
+  money out adds to a category's spend, money **in** assigned to the category
+  (refund/reimbursement) subtracts from it; transfer legs are skipped
+  everywhere. Categories with `monthlyBudget === 0` are tracked but uncapped.
+  The budget cycle is a configurable window, not the calendar month:
+  `currentPeriod(monthStartDay)` returns the `{ start, end }` range, and
+  budget spend/“left” are computed over it (cash-flow views like `monthlyFlow`
+  stay on calendar months).
 - `src/store.tsx` — `StoreProvider` / `useStore`: holds accounts, transactions,
   categories, and `settings` in React state, exposes async mutations that write
   then `reload()`.
 - `src/backup.ts` — JSON export (download) and import (validates the
   `app: 'budget-analyzer'` marker, then `replaceAll`). This is the user's only
   backup; treat the file format as a stable contract and version it
-  (`BACKUP_VERSION`, currently 3 — includes `categories` and `settings`).
+  (`BACKUP_VERSION`, currently 4 — includes `categories`, `settings` with
+  currency fields, and transfer legs).
 - `src/App.tsx` + `src/components/*` — floating-pill bottom-tab UI (Overview /
-  Accounts / Activity / Budgets / Backup). Edit forms are bottom sheets.
+  Accounts / Activity / Budgets / Settings). Edit forms are bottom sheets.
   Mobile-first; CSS uses `env(safe-area-inset-*)` for installed-PWA display.
   Shared category presentation (tile colors, emoji choices) lives in
   `src/components/ui.ts`; SVG icons in `src/components/icons.tsx`.
