@@ -8,7 +8,8 @@ import type { AppSettings, Category } from '../types'
 
 function pct(spent: number, budget: number): number {
   if (budget <= 0) return 0
-  return Math.min(100, Math.round((spent / budget) * 100))
+  // Net spend can be negative when refunds exceed spending — clamp to 0.
+  return Math.min(100, Math.max(0, Math.round((spent / budget) * 100)))
 }
 
 function ordinal(n: number): string {
@@ -18,14 +19,22 @@ function ordinal(n: number): string {
 }
 
 export function Budgets() {
-  const { categories, transactions, settings, saveCategory, removeCategory, saveSettings } =
-    useStore()
+  const {
+    accounts,
+    categories,
+    transactions,
+    settings,
+    saveCategory,
+    removeCategory,
+    saveSettings,
+  } = useStore()
   const [editing, setEditing] = useState<Category | null>(null)
   const [cycleOpen, setCycleOpen] = useState(false)
 
+  const base = settings.baseCurrency
   const period = currentPeriod(settings.monthStartDay)
-  const rows = categorySpend(categories, transactions, period)
-  const summary = budgetSummary(categories, transactions, period)
+  const rows = categorySpend(categories, transactions, accounts, settings, period)
+  const summary = budgetSummary(categories, transactions, accounts, settings, period)
   const hasBudgets = summary.totalBudget > 0
 
   function startNew() {
@@ -69,7 +78,9 @@ export function Budgets() {
               {pct(summary.totalSpent, summary.totalBudget)}% used
             </span>
           </div>
-          <p className="budget-hero-amount">{formatCents(Math.max(0, summary.remaining))}</p>
+          <p className="budget-hero-amount">
+            {formatCents(Math.max(0, summary.remaining), base)}
+          </p>
           <div className="bar bar-light">
             <span
               className={summary.remaining < 0 ? 'bar-fill over' : 'bar-fill'}
@@ -77,8 +88,8 @@ export function Budgets() {
             />
           </div>
           <div className="budget-hero-foot">
-            <span>{formatCents(summary.totalSpent)} spent</span>
-            <span>{formatCents(summary.totalBudget)} budget</span>
+            <span>{formatCents(summary.totalSpent, base)} spent</span>
+            <span>{formatCents(summary.totalBudget, base)} budget</span>
           </div>
         </div>
       )}
@@ -107,8 +118,8 @@ export function Budgets() {
                   <div className="row-body">
                     <span className="row-title">{category.name}</span>
                     <span className="row-meta">
-                      {formatCents(spent)}
-                      {budget > 0 ? ` of ${formatCents(budget)}` : ' spent'}
+                      {formatCents(spent, base)}
+                      {budget > 0 ? ` of ${formatCents(budget, base)}` : ' spent'}
                     </span>
                   </div>
                   <span
@@ -123,8 +134,8 @@ export function Budgets() {
                     {budget <= 0
                       ? 'No limit'
                       : over
-                        ? `${formatCents(-remaining)} over`
-                        : `${formatCents(remaining)} left`}
+                        ? `${formatCents(-remaining, base)} over`
+                        : `${formatCents(remaining, base)} left`}
                   </span>
                 </div>
                 {budget > 0 && (
@@ -144,6 +155,7 @@ export function Budgets() {
       {editing && (
         <CategoryForm
           category={editing}
+          baseCurrency={base}
           onClose={() => setEditing(null)}
           onSave={async (c) => {
             await saveCategory(c)
@@ -216,11 +228,13 @@ function CyclePicker({
 
 function CategoryForm({
   category,
+  baseCurrency,
   onClose,
   onSave,
   onDelete,
 }: {
   category: Category
+  baseCurrency: string
   onClose: () => void
   onSave: (c: Category) => void
   onDelete: (id: string) => void
@@ -286,7 +300,7 @@ function CategoryForm({
         </label>
 
         <label>
-          Monthly budget (leave blank for no limit)
+          Monthly budget in {baseCurrency} (leave blank for no limit)
           <input
             inputMode="decimal"
             value={budget}

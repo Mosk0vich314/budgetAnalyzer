@@ -33,10 +33,15 @@ interface BudgetDB extends DBSchema {
 
 const DB_NAME = 'budget-analyzer'
 // v2: categories store + Transaction.categoryId. v3: settings store.
-const DB_VERSION = 3
+// v4: settings gain baseCurrency + rates (multi-currency).
+const DB_VERSION = 4
 
 const SETTINGS_KEY = 'app'
-const DEFAULT_SETTINGS: AppSettings = { monthStartDay: 1 }
+const DEFAULT_SETTINGS: AppSettings = {
+  monthStartDay: 1,
+  baseCurrency: 'EUR',
+  rates: {},
+}
 
 let dbPromise: Promise<IDBPDatabase<BudgetDB>> | null = null
 
@@ -67,6 +72,12 @@ function getDB(): Promise<IDBPDatabase<BudgetDB>> {
             .objectStore('settings')
             .put({ id: SETTINGS_KEY, ...DEFAULT_SETTINGS })
         }
+        if (oldVersion >= 3 && oldVersion < 4) {
+          // Backfill the new multi-currency settings fields.
+          const store = tx.objectStore('settings')
+          const rec = await store.get(SETTINGS_KEY)
+          await store.put({ id: SETTINGS_KEY, ...DEFAULT_SETTINGS, ...rec })
+        }
       },
     })
   }
@@ -75,7 +86,9 @@ function getDB(): Promise<IDBPDatabase<BudgetDB>> {
 
 export async function getSettings(): Promise<AppSettings> {
   const rec = await (await getDB()).get('settings', SETTINGS_KEY)
-  return { ...DEFAULT_SETTINGS, ...(rec ? { monthStartDay: rec.monthStartDay } : {}) }
+  if (!rec) return { ...DEFAULT_SETTINGS }
+  const { id: _id, ...stored } = rec
+  return { ...DEFAULT_SETTINGS, ...stored }
 }
 
 export async function putSettings(s: AppSettings): Promise<void> {
@@ -94,10 +107,21 @@ export async function deleteAccount(id: string): Promise<void> {
   const db = await getDB()
   const tx = db.transaction(['accounts', 'transactions'], 'readwrite')
   await tx.objectStore('accounts').delete(id)
-  // Cascade: remove transactions belonging to the deleted account.
+  // Cascade: remove transactions belonging to the deleted account…
+  const transferIds = new Set<string>()
   const index = tx.objectStore('transactions').index('by-account')
   for await (const cursor of index.iterate(id)) {
+    if (cursor.value.transferId) transferIds.add(cursor.value.transferId)
     await cursor.delete()
+  }
+  // …and the partner legs of any transfers that touched it, so a transfer is
+  // never left half-deleted on the surviving account.
+  if (transferIds.size > 0) {
+    for await (const cursor of tx.objectStore('transactions').iterate()) {
+      if (cursor.value.transferId && transferIds.has(cursor.value.transferId)) {
+        await cursor.delete()
+      }
+    }
   }
   await tx.done
 }
@@ -136,8 +160,32 @@ export async function putTransaction(t: Transaction): Promise<void> {
   await (await getDB()).put('transactions', t)
 }
 
+/** Write several transactions atomically (used for the two transfer legs). */
+export async function putTransactions(ts: Transaction[]): Promise<void> {
+  const db = await getDB()
+  const tx = db.transaction('transactions', 'readwrite')
+  for (const t of ts) await tx.objectStore('transactions').put(t)
+  await tx.done
+}
+
+/**
+ * Delete a transaction. If it is a transfer leg, the partner leg goes with it
+ * — a half-deleted transfer would silently corrupt account balances.
+ */
 export async function deleteTransaction(id: string): Promise<void> {
-  await (await getDB()).delete('transactions', id)
+  const db = await getDB()
+  const tx = db.transaction('transactions', 'readwrite')
+  const store = tx.objectStore('transactions')
+  const rec = await store.get(id)
+  if (rec?.transferId) {
+    const transferId = rec.transferId
+    for await (const cursor of store.iterate()) {
+      if (cursor.value.transferId === transferId) await cursor.delete()
+    }
+  } else {
+    await store.delete(id)
+  }
+  await tx.done
 }
 
 /** Replace the entire database contents (used by import / restore). */

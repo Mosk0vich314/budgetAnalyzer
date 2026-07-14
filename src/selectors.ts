@@ -1,3 +1,4 @@
+import { hasRate, toBaseCents, type RateContext } from './money'
 import type { Account, Category, Transaction } from './types'
 
 /** Net effect of a transaction on its account balance, in cents. */
@@ -16,24 +17,49 @@ export function accountBalance(
 }
 
 export interface Totals {
+  /** Net worth in the base currency (accounts converted via settings.rates). */
   netWorth: number
   byKind: Record<Account['kind'], number>
+  /** Account currencies that lack an exchange rate (summed 1:1 as fallback). */
+  missingRates: string[]
 }
 
-/** Net worth and per-kind totals across all non-archived accounts. */
+/** Net worth and per-kind totals across all non-archived accounts, in base currency. */
 export function computeTotals(
   accounts: Account[],
   transactions: Transaction[],
+  rates: RateContext,
 ): Totals {
   const byKind: Totals['byKind'] = { bank: 0, cash: 0, investment: 0 }
+  const missing = new Set<string>()
   let netWorth = 0
   for (const account of accounts) {
     if (account.archived) continue
-    const balance = accountBalance(account, transactions)
+    if (!hasRate(account.currency, rates)) missing.add(account.currency)
+    const balance = toBaseCents(
+      accountBalance(account, transactions),
+      account.currency,
+      rates,
+    )
     byKind[account.kind] += balance
     netWorth += balance
   }
-  return { netWorth, byKind }
+  return { netWorth, byKind, missingRates: [...missing].sort() }
+}
+
+/** accountId → currency lookup for converting transaction amounts. */
+function currencyByAccount(accounts: Account[]): Map<string, string> {
+  return new Map(accounts.map((a) => [a.id, a.currency]))
+}
+
+/** Amount of a transaction expressed in base-currency cents. */
+export function txBaseAmount(
+  t: Transaction,
+  currencies: Map<string, string>,
+  rates: RateContext,
+): number {
+  const currency = currencies.get(t.accountId) ?? rates.baseCurrency
+  return toBaseCents(t.amount, currency, rates)
 }
 
 export interface MonthlyFlow {
@@ -42,14 +68,24 @@ export interface MonthlyFlow {
   out: number
 }
 
-/** Sum money in/out per calendar month, most recent first. */
-export function monthlyFlow(transactions: Transaction[]): MonthlyFlow[] {
+/**
+ * Sum money in/out per calendar month in base currency, most recent first.
+ * Transfer legs are skipped — moving money between own accounts is not flow.
+ */
+export function monthlyFlow(
+  transactions: Transaction[],
+  accounts: Account[],
+  rates: RateContext,
+): MonthlyFlow[] {
+  const currencies = currencyByAccount(accounts)
   const map = new Map<string, MonthlyFlow>()
   for (const t of transactions) {
+    if (t.transferId) continue
     const month = t.date.slice(0, 7)
     const entry = map.get(month) ?? { month, in: 0, out: 0 }
-    if (t.direction === 'in') entry.in += t.amount
-    else entry.out += t.amount
+    const amount = txBaseAmount(t, currencies, rates)
+    if (t.direction === 'in') entry.in += amount
+    else entry.out += amount
     map.set(month, entry)
   }
   return [...map.values()].sort((a, b) => b.month.localeCompare(a.month))
@@ -105,26 +141,33 @@ export function currentPeriod(monthStartDay = 1, now = new Date()): Period {
 export interface CategorySpend {
   category: Category
   budget: number // monthly limit in cents (0 = no limit)
-  spent: number // outflow this period in cents
+  spent: number // net outflow this period in base-currency cents
   remaining: number // budget - spent (can be negative)
   over: boolean
 }
 
 /**
- * Spend per category for a given budget period (outflows only). Categories with
- * a budget come first (and over-budget ones float to the top), then uncapped
- * categories ordered by spend.
+ * Net spend per category for a given budget period, in base currency.
+ * Outflows add to a category's spend; money **in** assigned to the category
+ * (refunds, reimbursements, cash-back) subtracts from it, giving the budget
+ * room back. Transfer legs are ignored. Categories with a budget come first
+ * (and over-budget ones float to the top), then uncapped categories by spend.
  */
 export function categorySpend(
   categories: Category[],
   transactions: Transaction[],
+  accounts: Account[],
+  rates: RateContext,
   period: Period,
 ): CategorySpend[] {
+  const currencies = currencyByAccount(accounts)
   const spentBy = new Map<string, number>()
   for (const t of transactions) {
-    if (t.direction !== 'out' || !t.categoryId) continue
+    if (!t.categoryId || t.transferId) continue
     if (t.date < period.start || t.date >= period.end) continue
-    spentBy.set(t.categoryId, (spentBy.get(t.categoryId) ?? 0) + t.amount)
+    const amount = txBaseAmount(t, currencies, rates)
+    const delta = t.direction === 'out' ? amount : -amount
+    spentBy.set(t.categoryId, (spentBy.get(t.categoryId) ?? 0) + delta)
   }
 
   return categories
@@ -159,9 +202,11 @@ export interface BudgetSummary {
 export function budgetSummary(
   categories: Category[],
   transactions: Transaction[],
+  accounts: Account[],
+  rates: RateContext,
   period: Period,
 ): BudgetSummary {
-  const rows = categorySpend(categories, transactions, period)
+  const rows = categorySpend(categories, transactions, accounts, rates, period)
   let totalBudget = 0
   let totalSpent = 0
   for (const r of rows) {

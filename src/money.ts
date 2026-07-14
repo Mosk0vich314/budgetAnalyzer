@@ -44,3 +44,39 @@ export function formatCents(cents: number, currency = 'EUR'): string {
 export function centsToInput(cents: number): string {
   return (cents / 100).toFixed(2)
 }
+
+/** Rate context for currency conversion (subset of AppSettings). */
+export interface RateContext {
+  baseCurrency: string
+  rates: Record<string, number>
+}
+
+/** Whether an amount in `currency` can be expressed in the base currency. */
+export function hasRate(currency: string, ctx: RateContext): boolean {
+  return currency === ctx.baseCurrency || ctx.rates[currency] > 0
+}
+
+/**
+ * Convert cents in `from` currency into base-currency cents.
+ * A missing rate falls back to 1:1 — callers that care surface the gap via
+ * `hasRate` (the dashboard shows a "set rate" warning).
+ */
+export function toBaseCents(cents: number, from: string, ctx: RateContext): number {
+  if (from === ctx.baseCurrency) return cents
+  const rate = ctx.rates[from]
+  return rate > 0 ? Math.round(cents * rate) : cents
+}
+
+/** Convert cents between two arbitrary currencies via the base currency. */
+export function convertCents(
+  cents: number,
+  from: string,
+  to: string,
+  ctx: RateContext,
+): number {
+  if (from === to) return cents
+  const base = toBaseCents(cents, from, ctx)
+  if (to === ctx.baseCurrency) return base
+  const rate = ctx.rates[to]
+  return rate > 0 ? Math.round(base / rate) : base
+}

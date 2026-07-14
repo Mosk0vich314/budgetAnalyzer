@@ -46,8 +46,9 @@ function monthLabel(ym: string): string {
 
 export function Dashboard() {
   const { accounts, transactions, categories, settings } = useStore()
-  const totals = computeTotals(accounts, transactions)
-  const flow = monthlyFlow(transactions)
+  const base = settings.baseCurrency
+  const totals = computeTotals(accounts, transactions, settings)
+  const flow = monthlyFlow(transactions, accounts, settings)
 
   const thisMonth = currentMonth()
   const current = flow.find((m) => m.month === thisMonth) ?? {
@@ -57,13 +58,17 @@ export function Dashboard() {
   }
 
   const period = currentPeriod(settings.monthStartDay)
-  const budget = budgetSummary(categories, transactions, period)
+  const budget = budgetSummary(categories, transactions, accounts, settings, period)
   const budgetPct =
     budget.totalBudget > 0
-      ? Math.min(100, Math.round((budget.totalSpent / budget.totalBudget) * 100))
+      ? Math.min(
+          100,
+          Math.max(0, Math.round((budget.totalSpent / budget.totalBudget) * 100)),
+        )
       : 0
 
   const active = accounts.filter((a) => !a.archived)
+  const multiCurrency = new Set(active.map((a) => a.currency)).size > 1
 
   return (
     <section>
@@ -80,11 +85,19 @@ export function Dashboard() {
           <span className="hero-dot" />
           Total balance
         </span>
-        <p className="hero-balance">{formatCents(totals.netWorth)}</p>
+        <p className="hero-balance">{formatCents(totals.netWorth, base)}</p>
         <span className="hero-sub">
           Across {active.length} {active.length === 1 ? 'account' : 'accounts'}
+          {multiCurrency ? `, converted to ${base}` : ''}
         </span>
       </div>
+
+      {totals.missingRates.length > 0 && (
+        <div className="warn-card">
+          No exchange rate for {totals.missingRates.join(', ')} — those balances
+          are counted 1:1. Set rates in the Settings tab.
+        </div>
+      )}
 
       <div className="stat-grid">
         <div className="stat-card dark">
@@ -94,7 +107,7 @@ export function Dashboard() {
               <ArrowUpIcon size={20} />
             </span>
           </div>
-          <span className="stat-value">{formatCents(current.in)}</span>
+          <span className="stat-value">{formatCents(current.in, base)}</span>
         </div>
         <div className="stat-card">
           <div className="stat-top">
@@ -103,7 +116,7 @@ export function Dashboard() {
               <ArrowDownIcon size={20} />
             </span>
           </div>
-          <span className="stat-value">{formatCents(current.out)}</span>
+          <span className="stat-value">{formatCents(current.out, base)}</span>
         </div>
       </div>
 
@@ -115,7 +128,7 @@ export function Dashboard() {
               Left this month
             </span>
             <span className="budget-mini-amount">
-              {formatCents(Math.max(0, budget.remaining))}
+              {formatCents(Math.max(0, budget.remaining), base)}
             </span>
           </div>
           <div className="bar">
@@ -125,8 +138,8 @@ export function Dashboard() {
             />
           </div>
           <div className="budget-mini-foot">
-            <span>{formatCents(budget.totalSpent)} spent</span>
-            <span>of {formatCents(budget.totalBudget)}</span>
+            <span>{formatCents(budget.totalSpent, base)} spent</span>
+            <span>of {formatCents(budget.totalBudget, base)}</span>
           </div>
         </div>
       )}
@@ -168,10 +181,10 @@ export function Dashboard() {
           {flow.slice(0, 6).map((m) => (
             <li key={m.month} className="flow-row">
               <span className="flow-month">{monthLabel(m.month)}</span>
-              <span className="flow-net">{formatCents(m.in - m.out)}</span>
+              <span className="flow-net">{formatCents(m.in - m.out, base)}</span>
               <span className="flow-detail">
-                <span className="amount-in">+{formatCents(m.in)}</span>
-                <span className="amount-out">−{formatCents(m.out)}</span>
+                <span className="amount-in">+{formatCents(m.in, base)}</span>
+                <span className="amount-out">−{formatCents(m.out, base)}</span>
               </span>
             </li>
           ))}

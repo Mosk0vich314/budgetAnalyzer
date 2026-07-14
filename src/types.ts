@@ -40,6 +40,12 @@ export interface Transaction {
   /** Always a positive amount in cents; `direction` gives the sign. */
   amount: number
   direction: TxDirection
+  /**
+   * Set when this transaction is one leg of an account-to-account transfer.
+   * Both legs (the 'out' leg and the 'in' leg) share the same transferId.
+   * Transfer legs are excluded from cash-flow and budget calculations.
+   */
+  transferId?: string
   /** References a Category id; undefined = uncategorized. */
   categoryId?: string
   /**
@@ -60,6 +66,19 @@ export interface AppSettings {
    * Capped at 28 so every month has the day.
    */
   monthStartDay: number
+  /**
+   * Currency every aggregate (net worth, cash flow, budgets) is expressed in.
+   * Accounts keep their own currency; balances are converted using `rates`.
+   */
+  baseCurrency: string
+  /**
+   * Exchange rates into the base currency: 1 unit of currency X equals
+   * `rates[X]` units of `baseCurrency`. The base itself needs no entry.
+   * Edited manually or refreshed from the ECB (see rates.ts).
+   */
+  rates: Record<string, number>
+  /** ISO timestamp of the last successful automatic rate refresh. */
+  ratesUpdatedAt?: string
 }
 
 /** Shape of the JSON file produced by export / consumed by import. */

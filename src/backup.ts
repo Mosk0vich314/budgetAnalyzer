@@ -14,9 +14,11 @@ import type {
   Transaction,
 } from './types'
 
-// v2: backups include `categories`. v3: backups include `settings`. Older files
-// import cleanly — missing categories are derived, missing settings default.
-const BACKUP_VERSION = 3
+// v2: backups include `categories`. v3: backups include `settings`. v4:
+// settings carry baseCurrency + rates, transactions may carry transferId.
+// Older files import cleanly — missing categories are derived, missing
+// settings fields default.
+const BACKUP_VERSION = 4
 
 /** Build the backup object from current DB contents and trigger a download. */
 export async function exportBackup(): Promise<void> {
@@ -62,6 +64,9 @@ export async function importBackup(file: File): Promise<void> {
   let categories = (parsed.categories as Category[] | undefined) ?? []
   const settings: AppSettings = {
     monthStartDay: parsed.settings?.monthStartDay ?? 1,
+    baseCurrency: parsed.settings?.baseCurrency ?? 'EUR',
+    rates: parsed.settings?.rates ?? {},
+    ratesUpdatedAt: parsed.settings?.ratesUpdatedAt,
   }
 
   // Pre-v2 backups have no categories — derive them from legacy strings.

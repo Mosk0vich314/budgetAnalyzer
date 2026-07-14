@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { newId, useStore } from '../store'
 import { accountBalance } from '../selectors'
 import { centsToInput, formatCents, parseAmountToCents } from '../money'
+import { COMMON_CURRENCIES, currencyLabel } from '../rates'
 import { BankIcon, CashIcon, ChartIcon, PlusIcon, TrashIcon } from './icons'
 import type { Account, AccountKind } from '../types'
 
@@ -69,7 +70,9 @@ export function Accounts() {
               </span>
               <div className="row-body">
                 <span className="row-title">{a.name}</span>
-                <span className="row-meta">{KIND_LABELS[a.kind]}</span>
+                <span className="row-meta">
+                  {KIND_LABELS[a.kind]} · {a.currency}
+                </span>
               </div>
               <span className="row-value">
                 {formatCents(accountBalance(a, transactions), a.currency)}
@@ -136,20 +139,27 @@ function AccountForm({
             ))}
           </select>
         </label>
-        <div className="field-row">
-          <label>
-            Opening balance
-            <input
-              inputMode="decimal"
-              value={balance}
-              onChange={(e) => setBalance(e.target.value)}
-            />
-          </label>
-          <label className="currency-field">
-            Currency
-            <input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} />
-          </label>
-        </div>
+        <label>
+          Opening balance
+          <input
+            inputMode="decimal"
+            value={balance}
+            onChange={(e) => setBalance(e.target.value)}
+          />
+        </label>
+        <label>
+          Currency
+          <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
+            {!COMMON_CURRENCIES.includes(currency) && (
+              <option value={currency}>{currencyLabel(currency)}</option>
+            )}
+            {COMMON_CURRENCIES.map((c) => (
+              <option key={c} value={c}>
+                {currencyLabel(c)}
+              </option>
+            ))}
+          </select>
+        </label>
         <div className="sheet-actions">
           {account.name && (
             <button className="danger" onClick={() => onDelete(account.id)}>

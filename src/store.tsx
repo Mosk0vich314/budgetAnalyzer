@@ -23,6 +23,8 @@ interface Store {
   saveAccount: (account: Account) => Promise<void>
   removeAccount: (id: string) => Promise<void>
   saveTransaction: (t: Transaction) => Promise<void>
+  /** Save several transactions atomically (the two legs of a transfer). */
+  saveTransactions: (ts: Transaction[]) => Promise<void>
   removeTransaction: (id: string) => Promise<void>
   saveCategory: (c: Category) => Promise<void>
   removeCategory: (id: string) => Promise<void>
@@ -35,7 +37,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [categories, setCategories] = useState<Category[]>([])
-  const [settings, setSettings] = useState<AppSettings>({ monthStartDay: 1 })
+  const [settings, setSettings] = useState<AppSettings>({
+    monthStartDay: 1,
+    baseCurrency: 'EUR',
+    rates: {},
+  })
   const [loading, setLoading] = useState(true)
 
   const reload = useCallback(async () => {
@@ -75,6 +81,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const saveTransaction = useCallback(
     async (t: Transaction) => {
       await db.putTransaction(t)
+      await reload()
+    },
+    [reload],
+  )
+
+  const saveTransactions = useCallback(
+    async (ts: Transaction[]) => {
+      await db.putTransactions(ts)
       await reload()
     },
     [reload],
@@ -122,6 +136,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     saveAccount,
     removeAccount,
     saveTransaction,
+    saveTransactions,
     removeTransaction,
     saveCategory,
     removeCategory,

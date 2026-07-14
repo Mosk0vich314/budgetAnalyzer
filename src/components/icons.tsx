@@ -108,6 +108,36 @@ export const TagIcon = (p: IconProps) => (
   </svg>
 )
 
+export const TransferIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M4 8.5h13" />
+    <path d="m14 5 3.5 3.5L14 12" />
+    <path d="M20 15.5H7" />
+    <path d="m10 12-3.5 3.5L10 19" />
+  </svg>
+)
+
+export const GearIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="3.2" />
+    <path d="M12 2.8v2.4M12 18.8v2.4M21.2 12h-2.4M5.2 12H2.8M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7M18.5 18.5l-1.7-1.7M7.2 7.2 5.5 5.5" />
+  </svg>
+)
+
+export const RefreshIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+    <path d="M20 3v4h-4" />
+  </svg>
+)
+
+export const SearchIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <circle cx="11" cy="11" r="6.5" />
+    <path d="m20 20-4.4-4.4" />
+  </svg>
+)
+
 export const TrashIcon = (p: IconProps) => (
   <svg {...base(p)}>
     <path d="M4 7h16" />

@@ -10,7 +10,7 @@ import {
   WalletIcon,
   ActivityIcon,
   TargetIcon,
-  BackupIcon,
+  GearIcon,
 } from './components/icons'
 import { useStore } from './store'
 
@@ -21,7 +21,7 @@ const TABS: { id: Tab; label: string; Icon: ComponentType<{ size?: number }> }[]
   { id: 'accounts', label: 'Accounts', Icon: WalletIcon },
   { id: 'transactions', label: 'Activity', Icon: ActivityIcon },
   { id: 'budgets', label: 'Budgets', Icon: TargetIcon },
-  { id: 'settings', label: 'Backup', Icon: BackupIcon },
+  { id: 'settings', label: 'Settings', Icon: GearIcon },
 ]
 
 export function App() {
