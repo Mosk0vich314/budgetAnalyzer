@@ -16,6 +16,60 @@ export function accountBalance(
     .reduce((sum, t) => sum + signedAmount(t), account.openingBalance)
 }
 
+/**
+ * What the app is currently looking at. The app can be scoped to a single
+ * account — Overview, Activity and Budgets then show only that account, in the
+ * account's own currency, with no conversion at all since every transaction is
+ * already stored in it — or to all accounts combined, where figures are
+ * converted into the base currency.
+ */
+export interface Scope {
+  /** null = all accounts combined. */
+  accountId: string | null
+  /** Currency every figure in this scope is expressed in. */
+  currency: string
+}
+
+/** The combined "all accounts, base currency" scope. */
+export function allScope(rates: RateContext): Scope {
+  return { accountId: null, currency: rates.baseCurrency }
+}
+
+/** Scope for one account, or the combined scope when `account` is undefined. */
+export function accountScope(
+  account: Account | undefined,
+  rates: RateContext,
+): Scope {
+  return account
+    ? { accountId: account.id, currency: account.currency }
+    : allScope(rates)
+}
+
+/** Whether a transaction belongs to the current scope. */
+export function inScope(t: Transaction, scope: Scope): boolean {
+  return scope.accountId === null || t.accountId === scope.accountId
+}
+
+/** Only the transactions the current scope covers. */
+export function scopedTransactions(
+  transactions: Transaction[],
+  scope: Scope,
+): Transaction[] {
+  return scope.accountId === null
+    ? transactions
+    : transactions.filter((t) => t.accountId === scope.accountId)
+}
+
+/**
+ * The monthly limit that applies to a category in this scope: the per-account
+ * limit (in that account's currency) when scoped to one account, otherwise the
+ * global limit in base currency. 0 = tracked but uncapped.
+ */
+export function categoryBudget(category: Category, scope: Scope): number {
+  if (scope.accountId === null) return category.monthlyBudget
+  return category.budgets?.[scope.accountId] ?? 0
+}
+
 export interface Totals {
   /** Net worth in the base currency (accounts converted via settings.rates). */
   netWorth: number
@@ -52,12 +106,18 @@ function currencyByAccount(accounts: Account[]): Map<string, string> {
   return new Map(accounts.map((a) => [a.id, a.currency]))
 }
 
-/** Amount of a transaction expressed in base-currency cents. */
-export function txBaseAmount(
+/**
+ * Amount of a transaction expressed in the scope's currency. Inside a single
+ * account that is simply the stored amount; across accounts it is converted
+ * into the base currency.
+ */
+export function txScopedAmount(
   t: Transaction,
+  scope: Scope,
   currencies: Map<string, string>,
   rates: RateContext,
 ): number {
+  if (scope.accountId !== null) return t.amount
   const currency = currencies.get(t.accountId) ?? rates.baseCurrency
   return toBaseCents(t.amount, currency, rates)
 }
@@ -69,21 +129,23 @@ export interface MonthlyFlow {
 }
 
 /**
- * Sum money in/out per calendar month in base currency, most recent first.
- * Transfer legs are skipped — moving money between own accounts is not flow.
+ * Sum money in/out per calendar month in the scope's currency, most recent
+ * first. Transfer legs are skipped — moving money between own accounts is not
+ * flow, not even when only one leg is in scope.
  */
 export function monthlyFlow(
   transactions: Transaction[],
   accounts: Account[],
   rates: RateContext,
+  scope: Scope = allScope(rates),
 ): MonthlyFlow[] {
   const currencies = currencyByAccount(accounts)
   const map = new Map<string, MonthlyFlow>()
   for (const t of transactions) {
-    if (t.transferId) continue
+    if (t.transferId || !inScope(t, scope)) continue
     const month = t.date.slice(0, 7)
     const entry = map.get(month) ?? { month, in: 0, out: 0 }
-    const amount = txBaseAmount(t, currencies, rates)
+    const amount = txScopedAmount(t, scope, currencies, rates)
     if (t.direction === 'in') entry.in += amount
     else entry.out += amount
     map.set(month, entry)
@@ -140,18 +202,20 @@ export function currentPeriod(monthStartDay = 1, now = new Date()): Period {
 
 export interface CategorySpend {
   category: Category
-  budget: number // monthly limit in cents (0 = no limit)
-  spent: number // net outflow this period in base-currency cents
+  budget: number // limit for this scope in cents (0 = no limit)
+  spent: number // net outflow this period, in the scope's currency
   remaining: number // budget - spent (can be negative)
   over: boolean
 }
 
 /**
- * Net spend per category for a given budget period, in base currency.
+ * Net spend per category for a given budget period, in the scope's currency.
  * Outflows add to a category's spend; money **in** assigned to the category
  * (refunds, reimbursements, cash-back) subtracts from it, giving the budget
  * room back. Transfer legs are ignored. Categories with a budget come first
  * (and over-budget ones float to the top), then uncapped categories by spend.
+ * Categories are global, so every scope gets the same list back — only the
+ * limits and the spend differ.
  */
 export function categorySpend(
   categories: Category[],
@@ -159,13 +223,14 @@ export function categorySpend(
   accounts: Account[],
   rates: RateContext,
   period: Period,
+  scope: Scope = allScope(rates),
 ): CategorySpend[] {
   const currencies = currencyByAccount(accounts)
   const spentBy = new Map<string, number>()
   for (const t of transactions) {
-    if (!t.categoryId || t.transferId) continue
+    if (!t.categoryId || t.transferId || !inScope(t, scope)) continue
     if (t.date < period.start || t.date >= period.end) continue
-    const amount = txBaseAmount(t, currencies, rates)
+    const amount = txScopedAmount(t, scope, currencies, rates)
     const delta = t.direction === 'out' ? amount : -amount
     spentBy.set(t.categoryId, (spentBy.get(t.categoryId) ?? 0) + delta)
   }
@@ -173,7 +238,7 @@ export function categorySpend(
   return categories
     .filter((c) => !c.archived)
     .map((category) => {
-      const budget = category.monthlyBudget
+      const budget = categoryBudget(category, scope)
       const spent = spentBy.get(category.id) ?? 0
       return {
         category,
@@ -205,8 +270,16 @@ export function budgetSummary(
   accounts: Account[],
   rates: RateContext,
   period: Period,
+  scope: Scope = allScope(rates),
 ): BudgetSummary {
-  const rows = categorySpend(categories, transactions, accounts, rates, period)
+  const rows = categorySpend(
+    categories,
+    transactions,
+    accounts,
+    rates,
+    period,
+    scope,
+  )
   let totalBudget = 0
   let totalSpent = 0
   for (const r of rows) {

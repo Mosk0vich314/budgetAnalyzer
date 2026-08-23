@@ -31,7 +31,14 @@ const KIND_LABELS: Record<AccountKind, string> = {
 }
 
 export function Accounts() {
-  const { accounts, transactions, saveAccount, removeAccount } = useStore()
+  const {
+    accounts,
+    transactions,
+    activeAccount,
+    setActiveAccount,
+    saveAccount,
+    removeAccount,
+  } = useStore()
   const [editing, setEditing] = useState<Account | null>(null)
 
   return (
@@ -60,11 +67,23 @@ export function Accounts() {
         <div className="empty">No accounts yet. Add your first one.</div>
       )}
 
+      {accounts.length > 0 && (
+        <p className="muted small scope-note">
+          Tap an account to edit it, or “View” to make it the one Overview,
+          Activity and Budgets show.
+        </p>
+      )}
+
       <ul className="row-list">
         {accounts.map((a) => {
           const Icon = KIND_ICON[a.kind]
+          const isActive = activeAccount?.id === a.id
           return (
-            <li key={a.id} className="row" onClick={() => setEditing(a)}>
+            <li
+              key={a.id}
+              className={isActive ? 'row scope-active' : 'row'}
+              onClick={() => setEditing(a)}
+            >
               <span className={KIND_TILE[a.kind]}>
                 <Icon size={22} />
               </span>
@@ -72,11 +91,21 @@ export function Accounts() {
                 <span className="row-title">{a.name}</span>
                 <span className="row-meta">
                   {KIND_LABELS[a.kind]} · {a.currency}
+                  {isActive ? ' · viewing' : ''}
                 </span>
               </div>
               <span className="row-value">
                 {formatCents(accountBalance(a, transactions), a.currency)}
               </span>
+              <button
+                className="row-action"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void setActiveAccount(isActive ? null : a.id)
+                }}
+              >
+                {isActive ? 'All' : 'View'}
+              </button>
             </li>
           )
         })}

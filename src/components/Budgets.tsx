@@ -1,10 +1,16 @@
 import { useState } from 'react'
 import { newId, useStore } from '../store'
-import { budgetSummary, categorySpend, currentPeriod } from '../selectors'
+import {
+  budgetSummary,
+  categoryBudget,
+  categorySpend,
+  currentPeriod,
+  type Scope,
+} from '../selectors'
 import { centsToInput, formatCents, parseAmountToCents } from '../money'
 import { PlusIcon, TrashIcon } from './icons'
 import { EMOJI_CHOICES, TILE_COLORS, tileClass } from './ui'
-import type { AppSettings, Category } from '../types'
+import type { Account, AppSettings, Category } from '../types'
 
 function pct(spent: number, budget: number): number {
   if (budget <= 0) return 0
@@ -24,6 +30,8 @@ export function Budgets() {
     categories,
     transactions,
     settings,
+    activeAccount,
+    scope,
     saveCategory,
     removeCategory,
     saveSettings,
@@ -31,10 +39,26 @@ export function Budgets() {
   const [editing, setEditing] = useState<Category | null>(null)
   const [cycleOpen, setCycleOpen] = useState(false)
 
-  const base = settings.baseCurrency
+  // Limits and spend are both in the scope's currency: the active account's
+  // own currency, or the base currency for the combined view.
+  const currency = scope.currency
   const period = currentPeriod(settings.monthStartDay)
-  const rows = categorySpend(categories, transactions, accounts, settings, period)
-  const summary = budgetSummary(categories, transactions, accounts, settings, period)
+  const rows = categorySpend(
+    categories,
+    transactions,
+    accounts,
+    settings,
+    period,
+    scope,
+  )
+  const summary = budgetSummary(
+    categories,
+    transactions,
+    accounts,
+    settings,
+    period,
+    scope,
+  )
   const hasBudgets = summary.totalBudget > 0
 
   function startNew() {
@@ -44,6 +68,7 @@ export function Budgets() {
       emoji: '🏷️',
       color: 'denim',
       monthlyBudget: 0,
+      budgets: {},
       archived: false,
       createdAt: new Date().toISOString(),
     })
@@ -68,6 +93,12 @@ export function Budgets() {
         </span>
       </button>
 
+      <p className="muted small scope-note">
+        {activeAccount
+          ? `Limits and spend for ${activeAccount.name}, in ${currency}. Each account keeps its own limits — switch accounts at the top.`
+          : `Limits and spend across every account, converted to ${currency}.`}
+      </p>
+
       {hasBudgets && (
         <div className="budget-hero">
           <div className="budget-hero-top">
@@ -79,7 +110,7 @@ export function Budgets() {
             </span>
           </div>
           <p className="budget-hero-amount">
-            {formatCents(Math.max(0, summary.remaining), base)}
+            {formatCents(Math.max(0, summary.remaining), currency)}
           </p>
           <div className="bar bar-light">
             <span
@@ -88,8 +119,8 @@ export function Budgets() {
             />
           </div>
           <div className="budget-hero-foot">
-            <span>{formatCents(summary.totalSpent, base)} spent</span>
-            <span>{formatCents(summary.totalBudget, base)} budget</span>
+            <span>{formatCents(summary.totalSpent, currency)} spent</span>
+            <span>{formatCents(summary.totalBudget, currency)} budget</span>
           </div>
         </div>
       )}
@@ -118,8 +149,8 @@ export function Budgets() {
                   <div className="row-body">
                     <span className="row-title">{category.name}</span>
                     <span className="row-meta">
-                      {formatCents(spent, base)}
-                      {budget > 0 ? ` of ${formatCents(budget, base)}` : ' spent'}
+                      {formatCents(spent, currency)}
+                      {budget > 0 ? ` of ${formatCents(budget, currency)}` : ' spent'}
                     </span>
                   </div>
                   <span
@@ -134,8 +165,8 @@ export function Budgets() {
                     {budget <= 0
                       ? 'No limit'
                       : over
-                        ? `${formatCents(-remaining, base)} over`
-                        : `${formatCents(remaining, base)} left`}
+                        ? `${formatCents(-remaining, currency)} over`
+                        : `${formatCents(remaining, currency)} left`}
                   </span>
                 </div>
                 {budget > 0 && (
@@ -155,7 +186,8 @@ export function Budgets() {
       {editing && (
         <CategoryForm
           category={editing}
-          baseCurrency={base}
+          scope={scope}
+          account={activeAccount}
           onClose={() => setEditing(null)}
           onSave={async (c) => {
             await saveCategory(c)
@@ -226,15 +258,22 @@ function CyclePicker({
   )
 }
 
+/**
+ * Edits a category. The name/icon/color are global, but the monthly limit
+ * belongs to the current scope: editing while an account is active sets that
+ * account's own limit, leaving every other account's untouched.
+ */
 function CategoryForm({
   category,
-  baseCurrency,
+  scope,
+  account,
   onClose,
   onSave,
   onDelete,
 }: {
   category: Category
-  baseCurrency: string
+  scope: Scope
+  account: Account | undefined
   onClose: () => void
   onSave: (c: Category) => void
   onDelete: (id: string) => void
@@ -243,19 +282,30 @@ function CategoryForm({
   const [name, setName] = useState(category.name)
   const [emoji, setEmoji] = useState(category.emoji)
   const [color, setColor] = useState(category.color)
+  const scopedBudget = categoryBudget(category, scope)
   const [budget, setBudget] = useState(
-    category.monthlyBudget ? centsToInput(category.monthlyBudget) : '',
+    scopedBudget ? centsToInput(scopedBudget) : '',
   )
 
+  /** Limits this category carries on the *other* accounts, for the hint line. */
+  const otherAccountLimits = Object.entries(category.budgets ?? {}).filter(
+    ([id, limit]) => id !== account?.id && limit > 0,
+  ).length
+
   function submit() {
-    const cents = parseAmountToCents(budget) ?? 0
-    onSave({
+    const cents = Math.max(0, parseAmountToCents(budget) ?? 0)
+    const next: Category = {
       ...category,
       name: name.trim(),
       emoji,
       color,
-      monthlyBudget: Math.max(0, cents),
-    })
+    }
+    if (account) {
+      next.budgets = { ...category.budgets, [account.id]: cents }
+    } else {
+      next.monthlyBudget = cents
+    }
+    onSave(next)
   }
 
   return (
@@ -300,7 +350,10 @@ function CategoryForm({
         </label>
 
         <label>
-          Monthly budget in {baseCurrency} (leave blank for no limit)
+          {account
+            ? `Monthly budget on ${account.name}, in ${scope.currency}`
+            : `Monthly budget across all accounts, in ${scope.currency}`}{' '}
+          (leave blank for no limit)
           <input
             inputMode="decimal"
             value={budget}
@@ -308,6 +361,16 @@ function CategoryForm({
             onChange={(e) => setBudget(e.target.value)}
           />
         </label>
+        {account && (
+          <p className="muted small" style={{ margin: 0 }}>
+            This limit applies to {account.name} only
+            {otherAccountLimits > 0
+              ? ` — the category also has a limit on ${otherAccountLimits} other ${
+                  otherAccountLimits === 1 ? 'account' : 'accounts'
+                }.`
+              : '. Switch accounts to set a different one there.'}
+          </p>
+        )}
 
         <div className="sheet-actions">
           {!isNew && (

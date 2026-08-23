@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 import * as db from './db'
+import { accountScope, type Scope } from './selectors'
 import type { Account, AppSettings, Category, Transaction } from './types'
 
 // A tiny app-wide store: it mirrors the IndexedDB contents in React state and
@@ -18,6 +19,15 @@ interface Store {
   transactions: Transaction[]
   categories: Category[]
   settings: AppSettings
+  /**
+   * The account the app is scoped to, or undefined for the combined
+   * "All accounts" view. Resolved from `settings.activeAccountId`, so an id
+   * left over from a deleted account falls back to the combined view.
+   */
+  activeAccount: Account | undefined
+  /** Scope derived from `activeAccount` — what every screen should read. */
+  scope: Scope
+  setActiveAccount: (id: string | null) => Promise<void>
   loading: boolean
   reload: () => Promise<void>
   saveAccount: (account: Account) => Promise<void>
@@ -41,6 +51,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     monthStartDay: 1,
     baseCurrency: 'EUR',
     rates: {},
+    activeAccountId: null,
   })
   const [loading, setLoading] = useState(true)
 
@@ -126,11 +137,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [reload],
   )
 
+  const setActiveAccount = useCallback(
+    async (id: string | null) => {
+      await db.putSettings({ ...settings, activeAccountId: id })
+      await reload()
+    },
+    [settings, reload],
+  )
+
+  // A stale id (deleted account, imported backup) degrades to "All accounts"
+  // rather than showing an empty screen.
+  const activeAccount = accounts.find((a) => a.id === settings.activeAccountId)
+  const scope = accountScope(activeAccount, settings)
+
   const value: Store = {
     accounts,
     transactions,
     categories,
     settings,
+    activeAccount,
+    scope,
+    setActiveAccount,
     loading,
     reload,
     saveAccount,

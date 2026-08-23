@@ -6,6 +6,7 @@ import {
   currentMonth,
   currentPeriod,
   monthlyFlow,
+  scopedTransactions,
 } from '../selectors'
 import { formatCents } from '../money'
 import {
@@ -14,7 +15,9 @@ import {
   BankIcon,
   CashIcon,
   ChartIcon,
+  TransferIcon,
 } from './icons'
+import { tileClass } from './ui'
 import type { AccountKind } from '../types'
 
 const KIND_ICON = {
@@ -45,10 +48,13 @@ function monthLabel(ym: string): string {
 }
 
 export function Dashboard() {
-  const { accounts, transactions, categories, settings } = useStore()
-  const base = settings.baseCurrency
+  const { accounts, transactions, categories, settings, activeAccount, scope } =
+    useStore()
+  // Every figure below is in the scope's currency: the account's own currency
+  // when one is selected, the base currency for the combined view.
+  const currency = scope.currency
   const totals = computeTotals(accounts, transactions, settings)
-  const flow = monthlyFlow(transactions, accounts, settings)
+  const flow = monthlyFlow(transactions, accounts, settings, scope)
 
   const thisMonth = currentMonth()
   const current = flow.find((m) => m.month === thisMonth) ?? {
@@ -58,7 +64,14 @@ export function Dashboard() {
   }
 
   const period = currentPeriod(settings.monthStartDay)
-  const budget = budgetSummary(categories, transactions, accounts, settings, period)
+  const budget = budgetSummary(
+    categories,
+    transactions,
+    accounts,
+    settings,
+    period,
+    scope,
+  )
   const budgetPct =
     budget.totalBudget > 0
       ? Math.min(
@@ -70,29 +83,33 @@ export function Dashboard() {
   const active = accounts.filter((a) => !a.archived)
   const multiCurrency = new Set(active.map((a) => a.currency)).size > 1
 
+  const balance = activeAccount
+    ? accountBalance(activeAccount, transactions)
+    : totals.netWorth
+
+  const recent = activeAccount
+    ? scopedTransactions(transactions, scope).slice(0, 5)
+    : []
+
   return (
     <section>
-      <header className="topbar">
-        <div className="avatar">€</div>
-        <div className="topbar-text">
-          <span className="topbar-greeting">Welcome back</span>
-          <span className="topbar-name">Overview</span>
-        </div>
-      </header>
-
       <div className="hero">
         <span className="hero-label">
           <span className="hero-dot" />
-          Total balance
+          {activeAccount ? 'Account balance' : 'Total balance'}
         </span>
-        <p className="hero-balance">{formatCents(totals.netWorth, base)}</p>
+        <p className="hero-balance">{formatCents(balance, currency)}</p>
         <span className="hero-sub">
-          Across {active.length} {active.length === 1 ? 'account' : 'accounts'}
-          {multiCurrency ? `, converted to ${base}` : ''}
+          {activeAccount
+            ? `${KIND_LABELS[activeAccount.kind]} · ${activeAccount.currency}`
+            : `Across ${active.length} ${
+                active.length === 1 ? 'account' : 'accounts'
+              }${multiCurrency ? `, converted to ${currency}` : ''}`}
         </span>
       </div>
 
-      {totals.missingRates.length > 0 && (
+      {/* Only the combined view converts anything, so only it can be missing a rate. */}
+      {!activeAccount && totals.missingRates.length > 0 && (
         <div className="warn-card">
           No exchange rate for {totals.missingRates.join(', ')} — those balances
           are counted 1:1. Set rates in the Settings tab.
@@ -107,7 +124,7 @@ export function Dashboard() {
               <ArrowUpIcon size={20} />
             </span>
           </div>
-          <span className="stat-value">{formatCents(current.in, base)}</span>
+          <span className="stat-value">{formatCents(current.in, currency)}</span>
         </div>
         <div className="stat-card">
           <div className="stat-top">
@@ -116,7 +133,7 @@ export function Dashboard() {
               <ArrowDownIcon size={20} />
             </span>
           </div>
-          <span className="stat-value">{formatCents(current.out, base)}</span>
+          <span className="stat-value">{formatCents(current.out, currency)}</span>
         </div>
       </div>
 
@@ -128,7 +145,7 @@ export function Dashboard() {
               Left this month
             </span>
             <span className="budget-mini-amount">
-              {formatCents(Math.max(0, budget.remaining), base)}
+              {formatCents(Math.max(0, budget.remaining), currency)}
             </span>
           </div>
           <div className="bar">
@@ -138,37 +155,111 @@ export function Dashboard() {
             />
           </div>
           <div className="budget-mini-foot">
-            <span>{formatCents(budget.totalSpent, base)} spent</span>
-            <span>of {formatCents(budget.totalBudget, base)}</span>
+            <span>{formatCents(budget.totalSpent, currency)} spent</span>
+            <span>of {formatCents(budget.totalBudget, currency)}</span>
           </div>
         </div>
       )}
 
-      <div className="section-head">
-        <h2>Accounts</h2>
-      </div>
-      {active.length === 0 ? (
-        <div className="empty">No accounts yet. Add your first one under Accounts.</div>
+      {activeAccount ? (
+        <>
+          <div className="section-head">
+            <h2>Recent activity</h2>
+          </div>
+          {recent.length === 0 ? (
+            <div className="empty">
+              Nothing logged on {activeAccount.name} yet. Add it under Activity.
+            </div>
+          ) : (
+            <ul className="row-list">
+              {recent.map((t) => {
+                const cat = categories.find((c) => c.id === t.categoryId)
+                const isIn = t.direction === 'in'
+                const title = t.transferId
+                  ? 'Transfer'
+                  : (cat?.name ?? (isIn ? 'Income' : 'Uncategorized'))
+                return (
+                  <li key={t.id} className="row">
+                    <span
+                      className={
+                        t.transferId
+                          ? 'tile cream'
+                          : cat
+                            ? tileClass(cat.color)
+                            : isIn
+                              ? 'tile in'
+                              : 'tile out'
+                      }
+                    >
+                      {t.transferId ? (
+                        <TransferIcon size={20} />
+                      ) : cat ? (
+                        <span className="emoji">{cat.emoji}</span>
+                      ) : isIn ? (
+                        <ArrowUpIcon size={20} />
+                      ) : (
+                        <ArrowDownIcon size={20} />
+                      )}
+                    </span>
+                    <div className="row-body">
+                      <span className="row-title">{title}</span>
+                      <span className="row-meta">
+                        {new Date(`${t.date}T00:00:00`).toLocaleDateString(
+                          undefined,
+                          { day: 'numeric', month: 'short' },
+                        )}
+                        {t.note ? ` · ${t.note}` : ''}
+                      </span>
+                    </div>
+                    <span
+                      className={
+                        t.transferId
+                          ? 'row-value muted'
+                          : isIn
+                            ? 'row-value amount-in'
+                            : 'row-value amount-out'
+                      }
+                    >
+                      {t.transferId ? '' : isIn ? '+' : '−'}
+                      {formatCents(t.amount, currency)}
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </>
       ) : (
-        <ul className="row-list">
-          {active.map((a) => {
-            const Icon = KIND_ICON[a.kind]
-            return (
-              <li key={a.id} className="row">
-                <span className={KIND_TILE[a.kind]}>
-                  <Icon size={22} />
-                </span>
-                <div className="row-body">
-                  <span className="row-title">{a.name}</span>
-                  <span className="row-meta">{KIND_LABELS[a.kind]}</span>
-                </div>
-                <span className="row-value">
-                  {formatCents(accountBalance(a, transactions), a.currency)}
-                </span>
-              </li>
-            )
-          })}
-        </ul>
+        <>
+          <div className="section-head">
+            <h2>Accounts</h2>
+          </div>
+          {active.length === 0 ? (
+            <div className="empty">
+              No accounts yet. Add your first one under Accounts.
+            </div>
+          ) : (
+            <ul className="row-list">
+              {active.map((a) => {
+                const Icon = KIND_ICON[a.kind]
+                return (
+                  <li key={a.id} className="row">
+                    <span className={KIND_TILE[a.kind]}>
+                      <Icon size={22} />
+                    </span>
+                    <div className="row-body">
+                      <span className="row-title">{a.name}</span>
+                      <span className="row-meta">{KIND_LABELS[a.kind]}</span>
+                    </div>
+                    <span className="row-value">
+                      {formatCents(accountBalance(a, transactions), a.currency)}
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </>
       )}
 
       <div className="section-head">
@@ -181,10 +272,12 @@ export function Dashboard() {
           {flow.slice(0, 6).map((m) => (
             <li key={m.month} className="flow-row">
               <span className="flow-month">{monthLabel(m.month)}</span>
-              <span className="flow-net">{formatCents(m.in - m.out, base)}</span>
+              <span className="flow-net">
+                {formatCents(m.in - m.out, currency)}
+              </span>
               <span className="flow-detail">
-                <span className="amount-in">+{formatCents(m.in, base)}</span>
-                <span className="amount-out">−{formatCents(m.out, base)}</span>
+                <span className="amount-in">+{formatCents(m.in, currency)}</span>
+                <span className="amount-out">−{formatCents(m.out, currency)}</span>
               </span>
             </li>
           ))}

@@ -26,8 +26,18 @@ export interface Category {
   emoji: string
   /** Tile color key — see TILE_COLORS in components. */
   color: string
-  /** Monthly spending limit in cents. 0 = no limit. */
+  /**
+   * Monthly spending limit for the "All accounts" view, in **base currency**
+   * cents. 0 = no limit.
+   */
   monthlyBudget: number
+  /**
+   * Per-account monthly limits: accountId → limit in **that account's own
+   * currency** (cents). A missing/0 entry means the category is tracked but
+   * uncapped while that account is the active one. Categories themselves stay
+   * global — only the limit (and the spend shown) is per account.
+   */
+  budgets?: Record<string, number>
   archived: boolean
   createdAt: string
 }
@@ -37,9 +47,22 @@ export type TxDirection = 'in' | 'out'
 export interface Transaction {
   id: string
   accountId: string
-  /** Always a positive amount in cents; `direction` gives the sign. */
+  /**
+   * Always a positive amount in cents, **in the account's own currency**;
+   * `direction` gives the sign. When the user entered the transaction in a
+   * different currency this is the converted value — see `originalAmount`.
+   */
   amount: number
   direction: TxDirection
+  /**
+   * What the user actually typed, when they entered the amount in a currency
+   * other than the account's: positive cents in `originalCurrency`. Kept for
+   * display/audit only — every calculation uses `amount`, so changing an
+   * exchange rate later never rewrites history.
+   */
+  originalAmount?: number
+  /** ISO 4217 code the amount was entered in, when it differs from the account's. */
+  originalCurrency?: string
   /**
    * Set when this transaction is one leg of an account-to-account transfer.
    * Both legs (the 'out' leg and the 'in' leg) share the same transferId.
@@ -79,6 +102,12 @@ export interface AppSettings {
   rates: Record<string, number>
   /** ISO timestamp of the last successful automatic rate refresh. */
   ratesUpdatedAt?: string
+  /**
+   * The account the app is currently scoped to — Overview, Activity and
+   * Budgets show only this account, in its own currency. `null` (or an id
+   * that no longer exists) means the combined "All accounts" view.
+   */
+  activeAccountId?: string | null
 }
 
 /** Shape of the JSON file produced by export / consumed by import. */

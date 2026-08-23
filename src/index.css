@@ -866,3 +866,118 @@ select:focus {
   font-size: 0.66rem;
   font-weight: 600;
 }
+
+/* Account scope switcher ------------------------------------------------------*/
+.scope-bar {
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: max(env(safe-area-inset-top), 14px) 18px 8px;
+  flex-shrink: 0;
+}
+.content.with-scope {
+  padding-top: 8px;
+}
+.scope-pill {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 7px 14px 7px 7px;
+  box-shadow: var(--shadow-soft);
+  color: var(--ink);
+  text-align: left;
+}
+.scope-pill:active {
+  transform: scale(0.985);
+}
+.scope-badge {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(150deg, var(--denim), var(--turq));
+  color: var(--cream);
+  display: grid;
+  place-items: center;
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 700;
+  font-size: 0.86rem;
+  flex-shrink: 0;
+}
+.scope-badge.all {
+  background: linear-gradient(150deg, var(--greyblue), var(--denim));
+}
+.scope-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  min-width: 0;
+}
+.scope-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.scope-name {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 700;
+  font-size: 0.98rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scope-balance {
+  margin-left: auto;
+  font-weight: 700;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+.scope-pill svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* Switcher sheet list */
+.scope-list {
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.row.scope-active {
+  outline: 2px solid var(--orange);
+  outline-offset: -2px;
+}
+.scope-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--orange);
+  color: #2a1400;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+.scope-note {
+  margin: 10px 2px 0;
+  line-height: 1.45;
+}
+.row-action {
+  margin-left: 10px;
+  flex-shrink: 0;
+  background: #fbf3e7;
+  border: 1.5px solid var(--hairline);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.row.scope-active .row-action {
+  background: var(--orange);
+  border-color: var(--orange);
+  color: #2a1400;
+}

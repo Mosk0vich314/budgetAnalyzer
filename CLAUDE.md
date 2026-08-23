@@ -6,7 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Budget Analyzer is a **local-first personal finance PWA**: bank/cash/investment
 accounts, money-in/out transactions, categories with monthly per-category
-budgets, net worth and monthly cash-flow overview.
+budgets, net worth and monthly cash-flow overview. The app is **scoped to one
+account at a time** (or to all of them combined) — see "Account scope" below.
 It is a static single-page app deployed to GitHub Pages and installed on a phone
 as a PWA. There is **no backend** — all data lives in the browser's IndexedDB on
 the device, and the only persistence/portability mechanism is JSON
@@ -47,6 +48,31 @@ generates `sw.js` at build time; the new SW takes over on next load
 `npm run dev`** (`devOptions.enabled: false`); test PWA/offline behavior with
 `npm run build && npm run preview`.
 
+## Account scope
+
+Overview, Activity and Budgets show **one account at a time**. The active
+account lives in `settings.activeAccountId` (persisted, so the app reopens
+where it was left); `null` — or an id whose account is gone — means the
+combined "All accounts" view. `store.scope` (a `Scope` from `selectors.ts`)
+is the derived value every screen should read, and `store.activeAccount` the
+resolved `Account`. The switcher pill (`components/AccountSwitcher.tsx`) is
+rendered by `App.tsx` above the three scoped tabs; Accounts and Settings stay
+global and show no pill.
+
+The rule that makes this simple: **inside one account nothing is ever
+converted.** Every transaction is stored in its account's currency, so a
+scoped view is native-currency throughout and `Scope.currency` is the account's
+currency. Only the combined scope converts, into `settings.baseCurrency`. So
+`missingRates` warnings are meaningful only in the combined view.
+
+Categories are **global**, but their limits are per scope: `Category.budgets[accountId]`
+is the limit in *that account's* currency, while `Category.monthlyBudget` is
+the all-accounts limit in base currency. `categoryBudget(category, scope)`
+picks the right one — never read either field directly. A category with no
+limit on the active account is tracked but uncapped there (same as a 0 limit),
+which is why upgrading from v4 leaves per-account budgets empty until the user
+sets them.
+
 ## Architecture
 
 Data flows in one direction: **IndexedDB → store → React components → store
@@ -62,7 +88,11 @@ optimistic local mutation of the React arrays; go through the store.
   own accounts is **two linked transactions** (an 'out' and an 'in' leg)
   sharing a `transferId`; legs are excluded from cash-flow and budget maths.
   `AppSettings` carries `baseCurrency` + `rates` (1 unit of currency X =
-  `rates[X]` units of base).
+  `rates[X]` units of base) and `activeAccountId` (the account scope).
+  `Transaction.amount` is **always in its account's currency**; when the user
+  types an amount in another currency the converted value is stored in
+  `amount` and the typed one in `originalAmount`/`originalCurrency` (display
+  only, so a later rate change never rewrites history).
 - `src/money.ts` — the *only* boundary between cents and human strings, and
   between currencies. `parseAmountToCents` (tolerant of `.`/`,` decimal
   styles), `formatCents` (Intl currency), `toBaseCents` / `convertCents` /
@@ -75,11 +105,14 @@ optimistic local mutation of the React arrays; go through the store.
   `deleteAccount` **cascades** to its transactions *and the partner legs of
   their transfers*, `deleteTransaction` on a transfer leg deletes both legs,
   but `deleteCategory` **orphans** transactions (clears `categoryId`) —
-  removing a budget must never delete spending history. `replaceAll` backs
-  import. Bumping the schema requires raising `DB_VERSION` and handling
-  `upgrade` (currently at v4: v1→v2 adds the `categories` store and runs
-  `deriveCategories`; v2→v3 adds a single-record `settings` store seeded with
-  `monthStartDay: 1`; v3→v4 backfills `baseCurrency: 'EUR'` + `rates: {}`).
+  removing a budget must never delete spending history. `deleteAccount` also
+  strips that account's entries from every `Category.budgets` and resets
+  `activeAccountId` so the app is never scoped to a gone account.
+  `replaceAll` backs import. Bumping the schema requires raising `DB_VERSION`
+  and handling `upgrade` (currently at v5: v1→v2 adds the `categories` store
+  and runs `deriveCategories`; v2→v3 adds a single-record `settings` store
+  seeded with `monthStartDay: 1`; v3→v4 backfills `baseCurrency: 'EUR'` +
+  `rates: {}`; v4→v5 backfills `activeAccountId: null` and `Category.budgets`).
   App preferences go through `getSettings` / `putSettings`.
 - `src/migrate.ts` — `deriveCategories`: turns legacy free-text
   `transaction.category` strings into `Category` records and backfills
@@ -88,9 +121,12 @@ optimistic local mutation of the React arrays; go through the store.
 - `src/selectors.ts` — pure derived calculations (account balance = opening
   balance + signed transactions; net worth; per-month flow; `categorySpend` /
   `budgetSummary` for per-category budgets). Keep computation here, not in
-  components. Aggregates are expressed in the **base currency** (each account
-  balance/transaction converted via `settings.rates`; `computeTotals` reports
-  `missingRates` for the dashboard warning). Budgets track **net outflows**:
+  components. Also home to `Scope`, `accountScope`/`allScope`,
+  `scopedTransactions`, `txScopedAmount` and `categoryBudget`; `monthlyFlow`,
+  `categorySpend` and `budgetSummary` all take an optional trailing `scope`
+  and express their result in `scope.currency` (defaulting to the combined
+  base-currency scope). `computeTotals` stays all-accounts-only and reports
+  `missingRates` for the dashboard warning. Budgets track **net outflows**:
   money out adds to a category's spend, money **in** assigned to the category
   (refund/reimbursement) subtracts from it; transfer legs are skipped
   everywhere. Categories with `monthlyBudget === 0` are tracked but uncapped.
@@ -100,14 +136,17 @@ optimistic local mutation of the React arrays; go through the store.
   stay on calendar months).
 - `src/store.tsx` — `StoreProvider` / `useStore`: holds accounts, transactions,
   categories, and `settings` in React state, exposes async mutations that write
-  then `reload()`.
+  then `reload()`. Also derives `activeAccount` / `scope` and exposes
+  `setActiveAccount`.
 - `src/backup.ts` — JSON export (download) and import (validates the
   `app: 'budget-analyzer'` marker, then `replaceAll`). This is the user's only
   backup; treat the file format as a stable contract and version it
-  (`BACKUP_VERSION`, currently 4 — includes `categories`, `settings` with
-  currency fields, and transfer legs).
+  (`BACKUP_VERSION`, currently 5 — includes `categories` with per-account
+  `budgets`, `settings` with currency fields and `activeAccountId`, transfer
+  legs, and any `originalAmount`/`originalCurrency` on transactions).
 - `src/App.tsx` + `src/components/*` — floating-pill bottom-tab UI (Overview /
-  Accounts / Activity / Budgets / Settings). Edit forms are bottom sheets.
+  Accounts / Activity / Budgets / Settings), with the account-scope pill above
+  the three scoped tabs. Edit forms are bottom sheets.
   Mobile-first; CSS uses `env(safe-area-inset-*)` for installed-PWA display.
   Shared category presentation (tile colors, emoji choices) lives in
   `src/components/ui.ts`; SVG icons in `src/components/icons.tsx`.

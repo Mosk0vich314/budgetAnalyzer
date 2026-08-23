@@ -34,13 +34,15 @@ interface BudgetDB extends DBSchema {
 const DB_NAME = 'budget-analyzer'
 // v2: categories store + Transaction.categoryId. v3: settings store.
 // v4: settings gain baseCurrency + rates (multi-currency).
-const DB_VERSION = 4
+// v5: per-account budgets (Category.budgets) + settings.activeAccountId.
+const DB_VERSION = 5
 
 const SETTINGS_KEY = 'app'
 const DEFAULT_SETTINGS: AppSettings = {
   monthStartDay: 1,
   baseCurrency: 'EUR',
   rates: {},
+  activeAccountId: null,
 }
 
 let dbPromise: Promise<IDBPDatabase<BudgetDB>> | null = null
@@ -72,11 +74,22 @@ function getDB(): Promise<IDBPDatabase<BudgetDB>> {
             .objectStore('settings')
             .put({ id: SETTINGS_KEY, ...DEFAULT_SETTINGS })
         }
-        if (oldVersion >= 3 && oldVersion < 4) {
-          // Backfill the new multi-currency settings fields.
+        if (oldVersion >= 3 && oldVersion < 5) {
+          // Backfill the multi-currency (v4) and scope (v5) settings fields.
           const store = tx.objectStore('settings')
           const rec = await store.get(SETTINGS_KEY)
           await store.put({ id: SETTINGS_KEY, ...DEFAULT_SETTINGS, ...rec })
+        }
+        if (oldVersion >= 2 && oldVersion < 5) {
+          // Existing categories keep their global limit and start with no
+          // per-account limits — every account shows them as uncapped until
+          // the user sets one.
+          const store = tx.objectStore('categories')
+          for await (const cursor of store.iterate()) {
+            if (!cursor.value.budgets) {
+              await cursor.update({ ...cursor.value, budgets: {} })
+            }
+          }
         }
       },
     })
@@ -105,7 +118,10 @@ export async function putAccount(account: Account): Promise<void> {
 
 export async function deleteAccount(id: string): Promise<void> {
   const db = await getDB()
-  const tx = db.transaction(['accounts', 'transactions'], 'readwrite')
+  const tx = db.transaction(
+    ['accounts', 'transactions', 'categories', 'settings'],
+    'readwrite',
+  )
   await tx.objectStore('accounts').delete(id)
   // Cascade: remove transactions belonging to the deleted account…
   const transferIds = new Set<string>()
@@ -122,6 +138,20 @@ export async function deleteAccount(id: string): Promise<void> {
         await cursor.delete()
       }
     }
+  }
+  // Drop this account's per-category budget limits — the categories themselves
+  // are global and stay, only the limit that pointed at a gone account goes.
+  for await (const cursor of tx.objectStore('categories').iterate()) {
+    if (cursor.value.budgets?.[id] === undefined) continue
+    const budgets = { ...cursor.value.budgets }
+    delete budgets[id]
+    await cursor.update({ ...cursor.value, budgets })
+  }
+  // Never leave the app scoped to an account that no longer exists.
+  const settings = tx.objectStore('settings')
+  const current = await settings.get(SETTINGS_KEY)
+  if (current?.activeAccountId === id) {
+    await settings.put({ ...current, activeAccountId: null })
   }
   await tx.done
 }

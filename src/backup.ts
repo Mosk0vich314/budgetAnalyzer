@@ -16,9 +16,11 @@ import type {
 
 // v2: backups include `categories`. v3: backups include `settings`. v4:
 // settings carry baseCurrency + rates, transactions may carry transferId.
+// v5: categories carry per-account `budgets`, transactions may carry the
+// originally entered foreign amount, settings carry `activeAccountId`.
 // Older files import cleanly — missing categories are derived, missing
 // settings fields default.
-const BACKUP_VERSION = 4
+const BACKUP_VERSION = 5
 
 /** Build the backup object from current DB contents and trigger a download. */
 export async function exportBackup(): Promise<void> {
@@ -62,11 +64,16 @@ export async function importBackup(file: File): Promise<void> {
   const accounts = parsed.accounts as Account[]
   let transactions = parsed.transactions as Transaction[]
   let categories = (parsed.categories as Category[] | undefined) ?? []
+  const activeAccountId = parsed.settings?.activeAccountId ?? null
   const settings: AppSettings = {
     monthStartDay: parsed.settings?.monthStartDay ?? 1,
     baseCurrency: parsed.settings?.baseCurrency ?? 'EUR',
     rates: parsed.settings?.rates ?? {},
     ratesUpdatedAt: parsed.settings?.ratesUpdatedAt,
+    // Only restore the scope if that account came along with the backup.
+    activeAccountId: accounts.some((a) => a.id === activeAccountId)
+      ? activeAccountId
+      : null,
   }
 
   // Pre-v2 backups have no categories — derive them from legacy strings.

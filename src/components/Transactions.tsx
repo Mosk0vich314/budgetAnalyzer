@@ -4,8 +4,10 @@ import {
   centsToInput,
   convertCents,
   formatCents,
+  hasRate,
   parseAmountToCents,
 } from '../money'
+import { COMMON_CURRENCIES } from '../rates'
 import {
   ArrowUpIcon,
   ArrowDownIcon,
@@ -60,6 +62,7 @@ export function Transactions() {
     transactions,
     categories,
     settings,
+    activeAccount,
     saveTransaction,
     saveTransactions,
     removeTransaction,
@@ -70,8 +73,12 @@ export function Transactions() {
   )
   const [query, setQuery] = useState('')
   const [dirFilter, setDirFilter] = useState<DirectionFilter>('all')
-  const [accountFilter, setAccountFilter] = useState('')
+  const [manualAccount, setManualAccount] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
+
+  // While an account is active the list is locked to it — the manual account
+  // dropdown only appears (and only applies) in the combined view.
+  const accountFilter = activeAccount ? activeAccount.id : manualAccount
 
   const accountById = useMemo(
     () => new Map(accounts.map((a) => [a.id, a])),
@@ -146,8 +153,12 @@ export function Transactions() {
     })
   }, [entries, query, dirFilter, accountFilter, categoryFilter, accounts, categories])
 
+  // The active account is the scope, not a filter the user chose here.
   const hasFilters =
-    query.trim() !== '' || dirFilter !== 'all' || accountFilter !== '' || categoryFilter !== ''
+    query.trim() !== '' ||
+    dirFilter !== 'all' ||
+    manualAccount !== '' ||
+    categoryFilter !== ''
 
   // Group by date (entries are already sorted date-desc by the store).
   const groups = useMemo(() => {
@@ -166,7 +177,7 @@ export function Transactions() {
       isNew: true,
       tx: {
         id: newId(),
-        accountId: accounts[0].id,
+        accountId: activeAccount?.id ?? accounts[0].id,
         amount: 0,
         direction: 'out',
         categoryId: undefined,
@@ -201,6 +212,13 @@ export function Transactions() {
         </button>
       </header>
 
+      {activeAccount && (
+        <p className="muted small scope-note">
+          Showing {activeAccount.name} only, in {activeAccount.currency} —
+          transfers to and from it included.
+        </p>
+      )}
+
       {accounts.length === 0 && (
         <div className="empty">Create an account first, then log transactions here.</div>
       )}
@@ -228,18 +246,20 @@ export function Transactions() {
               <option value="out">Money out</option>
               <option value="transfer">Transfers</option>
             </select>
-            <select
-              className="filter-select"
-              value={accountFilter}
-              onChange={(e) => setAccountFilter(e.target.value)}
-            >
-              <option value="">All accounts</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
+            {!activeAccount && (
+              <select
+                className="filter-select"
+                value={manualAccount}
+                onChange={(e) => setManualAccount(e.target.value)}
+              >
+                <option value="">All accounts</option>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            )}
             <select
               className="filter-select"
               value={categoryFilter}
@@ -281,6 +301,12 @@ export function Transactions() {
                 const to = t.direction === 'in' ? t : e.partner
                 const crossCurrency =
                   from && to && accountCurrency(from.accountId) !== accountCurrency(to.accountId)
+                // Inside one account a transfer is money leaving or arriving,
+                // so show that account's own leg, signed.
+                const leg = activeAccount
+                  ? [t, e.partner].find((l) => l?.accountId === activeAccount.id)
+                  : undefined
+                const shown = leg ?? from ?? t
                 return (
                   <li key={e.key} className="row" onClick={() => openEntry(e)}>
                     <span className="tile cream">
@@ -298,11 +324,17 @@ export function Transactions() {
                           : ''}
                       </span>
                     </div>
-                    <span className="row-value muted">
-                      {formatCents(
-                        (from ?? t).amount,
-                        accountCurrency((from ?? t).accountId),
-                      )}
+                    <span
+                      className={
+                        !leg
+                          ? 'row-value muted'
+                          : leg.direction === 'in'
+                            ? 'row-value amount-in'
+                            : 'row-value amount-out'
+                      }
+                    >
+                      {leg ? (leg.direction === 'in' ? '+' : '−') : ''}
+                      {formatCents(shown.amount, accountCurrency(shown.accountId))}
                     </span>
                   </li>
                 )
@@ -324,8 +356,21 @@ export function Transactions() {
                   <div className="row-body">
                     <span className="row-title">{title}</span>
                     <span className="row-meta">
-                      {accountName(t.accountId)}
-                      {t.note ? ` · ${t.note}` : ''}
+                      {[
+                        // The account is the scope when one is active — no
+                        // point repeating it on every row.
+                        activeAccount ? '' : accountName(t.accountId),
+                        // What was actually paid, when it wasn't in the
+                        // account's currency.
+                        t.originalCurrency && t.originalAmount
+                          ? formatCents(t.originalAmount, t.originalCurrency)
+                          : '',
+                        t.note,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ') ||
+                        // Keep the row two lines tall even with nothing to say.
+                        (isIn ? 'Money in' : 'Money out')}
                     </span>
                   </div>
                   <span className={isIn ? 'row-value amount-in' : 'row-value amount-out'}>
@@ -396,10 +441,25 @@ function TransactionForm({
   onSaveTransfer: (legs: Transaction[]) => void
   onDelete: (id: string) => void
 }) {
+  const currencyOf = (id: string) =>
+    accounts.find((a) => a.id === id)?.currency ?? settings.baseCurrency
+
   const isTransfer = !!tx.transferId
   const [mode, setMode] = useState<Mode>(isTransfer ? 'transfer' : tx.direction)
-  const [amount, setAmount] = useState(tx.amount ? centsToInput(tx.amount) : '')
   const [accountId, setAccountId] = useState(tx.accountId)
+  // The amount is typed in `entryCurrency` — the account's own currency by
+  // default, but it can be any currency: what gets stored is always the
+  // account-currency value in `converted`.
+  const [entryCurrency, setEntryCurrency] = useState(
+    tx.originalCurrency ?? currencyOf(tx.accountId),
+  )
+  const [amount, setAmount] = useState(() => {
+    const shown = tx.originalAmount ?? tx.amount
+    return shown ? centsToInput(shown) : ''
+  })
+  const [converted, setConverted] = useState(
+    tx.originalCurrency && tx.amount ? centsToInput(tx.amount) : '',
+  )
   const [toAccountId, setToAccountId] = useState(
     partner?.accountId ?? accounts.find((a) => a.id !== tx.accountId)?.id ?? '',
   )
@@ -412,24 +472,63 @@ function TransactionForm({
   const [note, setNote] = useState(tx.note)
   const [date, setDate] = useState(tx.date)
 
-  const currencyOf = (id: string) =>
-    accounts.find((a) => a.id === id)?.currency ?? settings.baseCurrency
-  const fromCurrency = currencyOf(accountId)
+  const accountCurrency = currencyOf(accountId)
+  const fromCurrency = accountCurrency
   const toCurrency = toAccountId ? currencyOf(toAccountId) : fromCurrency
   const crossCurrency = mode === 'transfer' && fromCurrency !== toCurrency
+  // Transfers already name both sides explicitly, so free currency entry
+  // applies to plain money in/out only.
+  const foreign = mode !== 'transfer' && entryCurrency !== accountCurrency
 
   const cents = parseAmountToCents(amount)
   const receivedCents = parseAmountToCents(received)
   const amountValid = cents !== null && cents > 0
+
+  /** Automatic conversion of the typed amount into the account's currency. */
+  const autoConverted =
+    foreign && amountValid
+      ? convertCents(Math.abs(cents), entryCurrency, accountCurrency, settings)
+      : null
+  const convertedOverride = parseAmountToCents(converted)
+  /** What will actually be stored on the transaction, in account currency. */
+  const storedAmount = !amountValid
+    ? 0
+    : !foreign
+      ? Math.abs(cents)
+      : convertedOverride !== null && convertedOverride > 0
+        ? Math.abs(convertedOverride)
+        : (autoConverted ?? 0)
+  // Without a rate for both sides the conversion would silently be 1:1.
+  const rateKnown =
+    hasRate(entryCurrency, settings) && hasRate(accountCurrency, settings)
+
   const valid =
     mode === 'transfer'
       ? amountValid && !!toAccountId && toAccountId !== accountId
-      : amountValid
+      : amountValid && storedAmount > 0
 
   const convertedHint =
     crossCurrency && amountValid
       ? convertCents(cents, fromCurrency, toCurrency, settings)
       : null
+
+  /** Currencies offered for the amount: the account's first, then the rest. */
+  const currencyOptions = [
+    ...new Set([
+      accountCurrency,
+      entryCurrency,
+      ...accounts.map((a) => a.currency),
+      settings.baseCurrency,
+      ...COMMON_CURRENCIES,
+    ]),
+  ]
+
+  function changeAccount(id: string) {
+    // Follow the new account's currency, unless the user deliberately picked
+    // a different one for this transaction.
+    if (entryCurrency === accountCurrency) setEntryCurrency(currencyOf(id))
+    setAccountId(id)
+  }
 
   function onPickCategory(value: string) {
     if (value === NEW_CATEGORY) {
@@ -496,13 +595,17 @@ function TransactionForm({
       onSaveTransfer([outLeg, inLeg])
       return
     }
+    // Store the account-currency value so balances and budgets never depend on
+    // a rate that may change later; remember what was typed for display.
     onSave({
       ...tx,
       direction: mode,
-      amount: abs,
+      amount: storedAmount,
       accountId,
       categoryId,
       transferId: undefined,
+      originalAmount: foreign ? abs : undefined,
+      originalCurrency: foreign ? entryCurrency : undefined,
       note: note.trim(),
       date,
     })
@@ -551,19 +654,67 @@ function TransactionForm({
           )}
         </div>
 
-        <label>
-          Amount ({fromCurrency})
-          <input
-            inputMode="decimal"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            autoFocus
-          />
-        </label>
+        {mode === 'transfer' ? (
+          <label>
+            Amount ({fromCurrency})
+            <input
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              autoFocus
+            />
+          </label>
+        ) : (
+          <div className="field-row">
+            <label>
+              Amount
+              <input
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                autoFocus
+              />
+            </label>
+            <label className="currency-field">
+              Currency
+              <select
+                value={entryCurrency}
+                onChange={(e) => setEntryCurrency(e.target.value)}
+              >
+                {currencyOptions.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
+
+        {foreign && (
+          <>
+            <label>
+              Charged to the account ({accountCurrency})
+              <input
+                inputMode="decimal"
+                value={converted}
+                placeholder={
+                  autoConverted !== null ? centsToInput(autoConverted) : '0.00'
+                }
+                onChange={(e) => setConverted(e.target.value)}
+              />
+            </label>
+            <p className={rateKnown ? 'muted small' : 'warn-card'} style={{ margin: 0 }}>
+              {rateKnown
+                ? `Converted automatically — override it above if your bank used a different rate. Only the ${accountCurrency} amount counts towards balances and budgets.`
+                : `No exchange rate set for ${entryCurrency} → ${accountCurrency}, so this would be counted 1:1. Type the ${accountCurrency} amount above, or set the rate in Settings.`}
+            </p>
+          </>
+        )}
 
         <label>
           {mode === 'transfer' ? 'From account' : 'Account'}
-          <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+          <select value={accountId} onChange={(e) => changeAccount(e.target.value)}>
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.name} ({a.currency})

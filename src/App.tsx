@@ -5,6 +5,7 @@ import { Accounts } from './components/Accounts'
 import { Transactions } from './components/Transactions'
 import { Budgets } from './components/Budgets'
 import { Settings } from './components/Settings'
+import { AccountSwitcher } from './components/AccountSwitcher'
 import {
   HomeIcon,
   WalletIcon,
@@ -24,13 +25,25 @@ const TABS: { id: Tab; label: string; Icon: ComponentType<{ size?: number }> }[]
   { id: 'settings', label: 'Settings', Icon: GearIcon },
 ]
 
+/** Tabs that show one account at a time and so carry the scope switcher. */
+const SCOPED_TABS: Tab[] = ['dashboard', 'transactions', 'budgets']
+
 export function App() {
   const [tab, setTab] = useState<Tab>('dashboard')
-  const { loading } = useStore()
+  const { loading, accounts } = useStore()
+
+  // Accounts and Settings manage everything at once, so they show no switcher.
+  const showScope = !loading && accounts.length > 0 && SCOPED_TABS.includes(tab)
 
   return (
     <div className="app">
-      <main className="content">
+      {showScope && (
+        <header className="scope-bar">
+          <AccountSwitcher />
+        </header>
+      )}
+
+      <main className={showScope ? 'content with-scope' : 'content'}>
         {loading ? (
           <p className="muted">Loading…</p>
         ) : (
