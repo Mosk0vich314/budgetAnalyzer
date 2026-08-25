@@ -69,6 +69,14 @@ export interface Transaction {
    * Transfer legs are excluded from cash-flow and budget calculations.
    */
   transferId?: string
+  /**
+   * Set when this transaction exists only to reconcile the app's balance with
+   * the account's real one (see "Adjust balance"). It moves the balance like
+   * any other transaction, but — like a transfer leg — it is excluded from
+   * cash-flow and budget maths: the amount is by definition unexplained, so
+   * booking it as income or spend would invent a data point.
+   */
+  adjustment?: boolean
   /** References a Category id; undefined = uncategorized. */
   categoryId?: string
   /**

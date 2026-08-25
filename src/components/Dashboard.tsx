@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useStore } from '../store'
 import {
   accountBalance,
@@ -10,6 +11,7 @@ import {
 } from '../selectors'
 import { formatCents } from '../money'
 import {
+  AdjustIcon,
   ArrowUpIcon,
   ArrowDownIcon,
   BankIcon,
@@ -17,6 +19,7 @@ import {
   ChartIcon,
   TransferIcon,
 } from './icons'
+import { BalanceAdjustSheet } from './BalanceAdjust'
 import { tileClass } from './ui'
 import type { AccountKind } from '../types'
 
@@ -50,6 +53,7 @@ function monthLabel(ym: string): string {
 export function Dashboard() {
   const { accounts, transactions, categories, settings, activeAccount, scope } =
     useStore()
+  const [adjusting, setAdjusting] = useState(false)
   // Every figure below is in the scope's currency: the account's own currency
   // when one is selected, the base currency for the combined view.
   const currency = scope.currency
@@ -106,7 +110,20 @@ export function Dashboard() {
                 active.length === 1 ? 'account' : 'accounts'
               }${multiCurrency ? `, converted to ${currency}` : ''}`}
         </span>
+        {/* Reconciling only makes sense against one real account. */}
+        {activeAccount && (
+          <button className="hero-action" onClick={() => setAdjusting(true)}>
+            <AdjustIcon size={15} /> Adjust balance
+          </button>
+        )}
       </div>
+
+      {adjusting && activeAccount && (
+        <BalanceAdjustSheet
+          account={activeAccount}
+          onClose={() => setAdjusting(false)}
+        />
+      )}
 
       {/* Only the combined view converts anything, so only it can be missing a rate. */}
       {!activeAccount && totals.missingRates.length > 0 && (
@@ -177,22 +194,28 @@ export function Dashboard() {
                 const isIn = t.direction === 'in'
                 const title = t.transferId
                   ? 'Transfer'
-                  : (cat?.name ?? (isIn ? 'Income' : 'Uncategorized'))
+                  : t.adjustment
+                    ? 'Balance adjustment'
+                    : (cat?.name ?? (isIn ? 'Income' : 'Uncategorized'))
                 return (
                   <li key={t.id} className="row">
                     <span
                       className={
                         t.transferId
                           ? 'tile cream'
-                          : cat
-                            ? tileClass(cat.color)
-                            : isIn
-                              ? 'tile in'
-                              : 'tile out'
+                          : t.adjustment
+                            ? 'tile grey'
+                            : cat
+                              ? tileClass(cat.color)
+                              : isIn
+                                ? 'tile in'
+                                : 'tile out'
                       }
                     >
                       {t.transferId ? (
                         <TransferIcon size={20} />
+                      ) : t.adjustment ? (
+                        <AdjustIcon size={20} />
                       ) : cat ? (
                         <span className="emoji">{cat.emoji}</span>
                       ) : isIn ? (

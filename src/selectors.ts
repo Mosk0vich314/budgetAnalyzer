@@ -1,9 +1,19 @@
 import { hasRate, toBaseCents, type RateContext } from './money'
-import type { Account, Category, Transaction } from './types'
+import type { Account, Category, Transaction, TxDirection } from './types'
 
 /** Net effect of a transaction on its account balance, in cents. */
 export function signedAmount(t: Transaction): number {
   return t.direction === 'in' ? t.amount : -t.amount
+}
+
+/**
+ * Whether a transaction counts as income or spend. Transfer legs move money
+ * between the user's own accounts, and balance adjustments correct for
+ * activity that was never logged — neither is cash flow, and neither belongs
+ * in a budget. Both still move the account balance.
+ */
+export function isFlow(t: Transaction): boolean {
+  return !t.transferId && !t.adjustment
 }
 
 /** Current balance of an account: opening balance + all its transactions. */
@@ -14,6 +24,23 @@ export function accountBalance(
   return transactions
     .filter((t) => t.accountId === account.id)
     .reduce((sum, t) => sum + signedAmount(t), account.openingBalance)
+}
+
+/**
+ * The correction needed to make an account read `target` when it currently
+ * reads `current` (both in the account's own currency, in cents). `null` means
+ * the app already agrees with reality and nothing should be written.
+ */
+export function balanceCorrection(
+  current: number,
+  target: number,
+): { amount: number; direction: TxDirection } | null {
+  const difference = target - current
+  if (difference === 0) return null
+  return {
+    amount: Math.abs(difference),
+    direction: difference > 0 ? 'in' : 'out',
+  }
 }
 
 /**
@@ -131,7 +158,8 @@ export interface MonthlyFlow {
 /**
  * Sum money in/out per calendar month in the scope's currency, most recent
  * first. Transfer legs are skipped — moving money between own accounts is not
- * flow, not even when only one leg is in scope.
+ * flow, not even when only one leg is in scope — and so are balance
+ * adjustments.
  */
 export function monthlyFlow(
   transactions: Transaction[],
@@ -142,7 +170,7 @@ export function monthlyFlow(
   const currencies = currencyByAccount(accounts)
   const map = new Map<string, MonthlyFlow>()
   for (const t of transactions) {
-    if (t.transferId || !inScope(t, scope)) continue
+    if (!isFlow(t) || !inScope(t, scope)) continue
     const month = t.date.slice(0, 7)
     const entry = map.get(month) ?? { month, in: 0, out: 0 }
     const amount = txScopedAmount(t, scope, currencies, rates)
@@ -212,7 +240,7 @@ export interface CategorySpend {
  * Net spend per category for a given budget period, in the scope's currency.
  * Outflows add to a category's spend; money **in** assigned to the category
  * (refunds, reimbursements, cash-back) subtracts from it, giving the budget
- * room back. Transfer legs are ignored. Categories with a budget come first
+ * room back. Transfer legs and balance adjustments are ignored. Categories with a budget come first
  * (and over-budget ones float to the top), then uncapped categories by spend.
  * Categories are global, so every scope gets the same list back — only the
  * limits and the spend differ.
@@ -228,7 +256,7 @@ export function categorySpend(
   const currencies = currencyByAccount(accounts)
   const spentBy = new Map<string, number>()
   for (const t of transactions) {
-    if (!t.categoryId || t.transferId || !inScope(t, scope)) continue
+    if (!t.categoryId || !isFlow(t) || !inScope(t, scope)) continue
     if (t.date < period.start || t.date >= period.end) continue
     const amount = txScopedAmount(t, scope, currencies, rates)
     const delta = t.direction === 'out' ? amount : -amount

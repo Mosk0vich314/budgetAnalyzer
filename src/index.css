@@ -981,3 +981,61 @@ select:focus {
   border-color: var(--orange);
   color: #2a1400;
 }
+
+/* Balance adjustment -------------------------------------------------------*/
+.hero-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  background: #fbf3e7;
+  border: 1.5px solid var(--hairline);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.adjust-current {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: #fbf3e7;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.adjust-current strong {
+  margin-left: auto;
+  font-size: 1.02rem;
+  color: var(--ink);
+}
+.adjust-current .row-action {
+  margin-left: 0;
+}
+.adjust-preview {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: #fbf3e7;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+.adjust-preview.in {
+  background: rgba(23, 97, 110, 0.1);
+  color: var(--in);
+}
+.adjust-preview.out {
+  background: rgba(200, 80, 62, 0.1);
+  color: var(--out);
+}
+.field-hint {
+  /* Sits inside `label`, a flex column, so its 6px gap is the spacing. */
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 400;
+  line-height: 1.4;
+}

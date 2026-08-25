@@ -18,9 +18,10 @@ import type {
 // settings carry baseCurrency + rates, transactions may carry transferId.
 // v5: categories carry per-account `budgets`, transactions may carry the
 // originally entered foreign amount, settings carry `activeAccountId`.
+// v6: transactions may carry `adjustment` (balance corrections).
 // Older files import cleanly — missing categories are derived, missing
 // settings fields default.
-const BACKUP_VERSION = 5
+const BACKUP_VERSION = 6
 
 /** Build the backup object from current DB contents and trigger a download. */
 export async function exportBackup(): Promise<void> {

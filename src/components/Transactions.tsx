@@ -9,6 +9,7 @@ import {
 } from '../money'
 import { COMMON_CURRENCIES } from '../rates'
 import {
+  AdjustIcon,
   ArrowUpIcon,
   ArrowDownIcon,
   PlusIcon,
@@ -341,11 +342,25 @@ export function Transactions() {
               }
               const isIn = t.direction === 'in'
               const cat = categoryById(t.categoryId)
-              const title = cat?.name ?? (isIn ? 'Income' : 'Uncategorized')
+              const title = t.adjustment
+                ? 'Balance adjustment'
+                : (cat?.name ?? (isIn ? 'Income' : 'Uncategorized'))
               return (
                 <li key={e.key} className="row" onClick={() => openEntry(e)}>
-                  <span className={cat ? tileClass(cat.color) : isIn ? 'tile in' : 'tile out'}>
-                    {cat ? (
+                  <span
+                    className={
+                      t.adjustment
+                        ? 'tile grey'
+                        : cat
+                          ? tileClass(cat.color)
+                          : isIn
+                            ? 'tile in'
+                            : 'tile out'
+                    }
+                  >
+                    {t.adjustment ? (
+                      <AdjustIcon size={20} />
+                    ) : cat ? (
                       <span className="emoji">{cat.emoji}</span>
                     ) : isIn ? (
                       <ArrowUpIcon size={20} />
@@ -370,7 +385,11 @@ export function Transactions() {
                         .filter(Boolean)
                         .join(' · ') ||
                         // Keep the row two lines tall even with nothing to say.
-                        (isIn ? 'Money in' : 'Money out')}
+                        (t.adjustment
+                          ? 'Correction — not counted as flow'
+                          : isIn
+                            ? 'Money in'
+                            : 'Money out')}
                     </span>
                   </div>
                   <span className={isIn ? 'row-value amount-in' : 'row-value amount-out'}>
@@ -623,9 +642,11 @@ function TransactionForm({
         <h2>
           {isNew
             ? 'New transaction'
-            : mode === 'transfer'
-              ? 'Edit transfer'
-              : 'Edit transaction'}
+            : tx.adjustment
+              ? 'Edit balance adjustment'
+              : mode === 'transfer'
+                ? 'Edit transfer'
+                : 'Edit transaction'}
         </h2>
 
         <div className="segmented">
@@ -756,7 +777,7 @@ function TransactionForm({
           </>
         )}
 
-        {mode !== 'transfer' && (
+        {mode !== 'transfer' && !tx.adjustment && (
           <>
             <label>
               Category

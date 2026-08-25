@@ -158,3 +158,14 @@ export const CheckIcon = (p: IconProps) => (
     <path d="m4.5 12.5 5 5 10-11" />
   </svg>
 )
+
+export const AdjustIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M4 8h9" />
+    <path d="M17.5 8H20" />
+    <circle cx="15" cy="8" r="2.2" />
+    <path d="M4 16h2.5" />
+    <path d="M11 16h9" />
+    <circle cx="8.5" cy="16" r="2.2" />
+  </svg>
+)

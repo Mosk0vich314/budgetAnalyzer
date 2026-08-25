@@ -73,6 +73,25 @@ limit on the active account is tracked but uncapped there (same as a 0 limit),
 which is why upgrading from v4 leaves per-account budgets empty until the user
 sets them.
 
+## Correcting a balance
+
+Real life drifts from the app, so any account can be reconciled:
+`components/BalanceAdjust.tsx` asks for the balance the bank actually shows and
+writes the difference as a normal, dated, deletable transaction flagged
+`adjustment: true` — never a silent edit of `openingBalance`, which would
+rewrite history and leave no trace. `balanceCorrection(current, target)` in
+`selectors.ts` is the (pure) maths; the sheet only renders it. It is reachable
+from the Overview hero while scoped to an account, and from the account's edit
+sheet under Accounts.
+
+Adjustments are **excluded from cash flow and budgets** exactly like transfer
+legs — `isFlow(t)` is the single predicate both go through, so any new
+aggregate must use it rather than testing `transferId` on its own. The reason:
+the amount is by definition unexplained, so booking it as income or spend would
+invent a data point. Money the user *can* explain belongs in a normal
+transaction (salary → money in; moving money between own accounts → transfer),
+which is why the adjust sheet has no category picker.
+
 ## Architecture
 
 Data flows in one direction: **IndexedDB → store → React components → store
@@ -86,7 +105,8 @@ optimistic local mutation of the React arrays; go through the store.
   Transactions reference a category via `categoryId` (`category` is a legacy
   free-text field kept only for importing pre-v2 backups). A transfer between
   own accounts is **two linked transactions** (an 'out' and an 'in' leg)
-  sharing a `transferId`; legs are excluded from cash-flow and budget maths.
+  sharing a `transferId`; legs are excluded from cash-flow and budget maths, as
+  are balance corrections (`adjustment: true`) — see "Correcting a balance".
   `AppSettings` carries `baseCurrency` + `rates` (1 unit of currency X =
   `rates[X]` units of base) and `activeAccountId` (the account scope).
   `Transaction.amount` is **always in its account's currency**; when the user
@@ -125,7 +145,9 @@ optimistic local mutation of the React arrays; go through the store.
   `scopedTransactions`, `txScopedAmount` and `categoryBudget`; `monthlyFlow`,
   `categorySpend` and `budgetSummary` all take an optional trailing `scope`
   and express their result in `scope.currency` (defaulting to the combined
-  base-currency scope). `computeTotals` stays all-accounts-only and reports
+  base-currency scope). `isFlow` decides what counts as income/spend (skipping
+  transfer legs and adjustments) and `balanceCorrection` derives a
+  reconciliation. `computeTotals` stays all-accounts-only and reports
   `missingRates` for the dashboard warning. Budgets track **net outflows**:
   money out adds to a category's spend, money **in** assigned to the category
   (refund/reimbursement) subtracts from it; transfer legs are skipped
@@ -141,9 +163,10 @@ optimistic local mutation of the React arrays; go through the store.
 - `src/backup.ts` — JSON export (download) and import (validates the
   `app: 'budget-analyzer'` marker, then `replaceAll`). This is the user's only
   backup; treat the file format as a stable contract and version it
-  (`BACKUP_VERSION`, currently 5 — includes `categories` with per-account
+  (`BACKUP_VERSION`, currently 6 — includes `categories` with per-account
   `budgets`, `settings` with currency fields and `activeAccountId`, transfer
-  legs, and any `originalAmount`/`originalCurrency` on transactions).
+  legs, balance corrections, and any `originalAmount`/`originalCurrency` on
+  transactions).
 - `src/App.tsx` + `src/components/*` — floating-pill bottom-tab UI (Overview /
   Accounts / Activity / Budgets / Settings), with the account-scope pill above
   the three scoped tabs. Edit forms are bottom sheets.

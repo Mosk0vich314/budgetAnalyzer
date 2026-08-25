@@ -4,6 +4,7 @@ import { accountBalance } from '../selectors'
 import { centsToInput, formatCents, parseAmountToCents } from '../money'
 import { COMMON_CURRENCIES, currencyLabel } from '../rates'
 import { BankIcon, CashIcon, ChartIcon, PlusIcon, TrashIcon } from './icons'
+import { BalanceAdjustSheet } from './BalanceAdjust'
 import type { Account, AccountKind } from '../types'
 
 const KINDS: { value: AccountKind; label: string }[] = [
@@ -40,6 +41,7 @@ export function Accounts() {
     removeAccount,
   } = useStore()
   const [editing, setEditing] = useState<Account | null>(null)
+  const [adjusting, setAdjusting] = useState<Account | null>(null)
 
   return (
     <section>
@@ -69,8 +71,8 @@ export function Accounts() {
 
       {accounts.length > 0 && (
         <p className="muted small scope-note">
-          Tap an account to edit it, or “View” to make it the one Overview,
-          Activity and Budgets show.
+          Tap an account to edit it or correct its balance, or “View” to make
+          it the one Overview, Activity and Budgets show.
         </p>
       )}
 
@@ -114,6 +116,12 @@ export function Accounts() {
       {editing && (
         <AccountForm
           account={editing}
+          balance={accountBalance(editing, transactions)}
+          onAdjust={() => {
+            const a = editing
+            setEditing(null)
+            setAdjusting(a)
+          }}
           onClose={() => setEditing(null)}
           onSave={async (a) => {
             await saveAccount(a)
@@ -125,35 +133,49 @@ export function Accounts() {
           }}
         />
       )}
+
+      {adjusting && (
+        <BalanceAdjustSheet
+          account={adjusting}
+          onClose={() => setAdjusting(null)}
+        />
+      )}
     </section>
   )
 }
 
 function AccountForm({
   account,
+  balance,
+  onAdjust,
   onClose,
   onSave,
   onDelete,
 }: {
   account: Account
+  /** Current balance, so an existing account can be reconciled from here. */
+  balance: number
+  onAdjust: () => void
   onClose: () => void
   onSave: (a: Account) => void
   onDelete: (id: string) => void
 }) {
   const [name, setName] = useState(account.name)
   const [kind, setKind] = useState<AccountKind>(account.kind)
-  const [balance, setBalance] = useState(centsToInput(account.openingBalance))
+  const [opening, setOpening] = useState(centsToInput(account.openingBalance))
   const [currency, setCurrency] = useState(account.currency)
+  // A blank name is how a freshly created account arrives here.
+  const isExisting = !!account.name
 
   function submit() {
-    const opening = parseAmountToCents(balance) ?? 0
-    onSave({ ...account, name: name.trim(), kind, openingBalance: opening, currency })
+    const cents = parseAmountToCents(opening) ?? 0
+    onSave({ ...account, name: name.trim(), kind, openingBalance: cents, currency })
   }
 
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <h2>{account.name ? 'Edit account' : 'New account'}</h2>
+        <h2>{isExisting ? 'Edit account' : 'New account'}</h2>
         <label>
           Name
           <input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
@@ -168,13 +190,27 @@ function AccountForm({
             ))}
           </select>
         </label>
+        {isExisting && (
+          <div className="adjust-current">
+            <span>Balance now</span>
+            <strong>{formatCents(balance, currency)}</strong>
+            <button className="row-action" onClick={onAdjust}>
+              Adjust
+            </button>
+          </div>
+        )}
         <label>
           Opening balance
           <input
             inputMode="decimal"
-            value={balance}
-            onChange={(e) => setBalance(e.target.value)}
+            value={opening}
+            onChange={(e) => setOpening(e.target.value)}
           />
+          <span className="field-hint">
+            What the account held before any transaction was logged. To fix a
+            balance that has drifted, use “Adjust” above instead — it keeps
+            the correction visible in Activity.
+          </span>
         </label>
         <label>
           Currency
@@ -190,7 +226,7 @@ function AccountForm({
           </select>
         </label>
         <div className="sheet-actions">
-          {account.name && (
+          {isExisting && (
             <button className="danger" onClick={() => onDelete(account.id)}>
               <TrashIcon size={16} /> Delete
             </button>
